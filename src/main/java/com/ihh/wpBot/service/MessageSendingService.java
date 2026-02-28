@@ -50,7 +50,7 @@ public class MessageSendingService {
 
     @Async
     public void startSendingProcess(String sessionId, List<String> phoneNumbers, String message, 
-                                    int minDelay, int maxDelay, MultipartFile[] media) {
+                                    int minDelay, int maxDelay, List<String> mediaPaths) {
         
         SendSession session = activeSessions.get(sessionId);
         if (session == null) return;
@@ -74,15 +74,13 @@ public class MessageSendingService {
                 session.setCurrentNumber(phone);
 
                 try {
-                    whatsAppService.sendMessage(phone, message);
-                    session.setSentCount(session.getSentCount() + 1);
-                    session.setProgress((double) session.getSentCount() / session.getTotalNumbers());
-                    session.addLog(getFormattedTime() + " [GÖNDER] " + phone + " numarasına gönderildi. ✔");
-                    
+                    // Artık mediaPaths'i de gönderiyoruz
+                    whatsAppService.sendMessage(phone, message, mediaPaths); 
+                    String medyaLog = mediaPaths.isEmpty() ? "" : " (Medya ile)";
+                    session.addLog(getFormattedTime() + " [GÖNDER] " + phone + " numarasına gönderildi" + medyaLog + ". ✔");
                 } catch (Exception e) {
-                    session.addLog(getFormattedTime() + " [HATA] " + phone + " numarasına gönderilemedi.");
+                    session.addLog(getFormattedTime() + " [HATA] " + phone + " - " + e.getMessage());
                 } finally {
-                    // Başarılı da olsa başarısız da olsa bu numarayı "işlendi" sayıyoruz ki bar ilerlesin
                     session.setSentCount(session.getSentCount() + 1);
                     session.setProgress((double) session.getSentCount() / session.getTotalNumbers());
                 }

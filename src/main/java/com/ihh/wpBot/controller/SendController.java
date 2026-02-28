@@ -9,8 +9,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.File;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/send")
@@ -26,20 +29,32 @@ public class SendController {
     @PostMapping("/start")
     public ResponseEntity<?> startSending(
             @RequestParam("phoneNumbers") String phoneNumbersJson,
-            @RequestParam("message") String message,
+            @RequestParam(value = "message", required = false) String message,
             @RequestParam("minDelay") int minDelay,
             @RequestParam("maxDelay") int maxDelay,
             @RequestParam(value = "media", required = false) MultipartFile[] media) {
 
         try {
-            // Flutter'dan gelen JSON metnini Java Listesine (Array) çevir
             ObjectMapper mapper = new ObjectMapper();
             List<String> phoneNumbers = mapper.readValue(phoneNumbersJson, new TypeReference<List<String>>() {});
 
+            // 1. MEDYA DOSYALARINI GEÇİCİ KLASÖRE KAYDET
+            List<String> savedMediaPaths = new ArrayList<>();
+            if (media != null && media.length > 0) {
+                String tempDir = System.getProperty("java.io.tmpdir"); // Bilgisayarın Temp klasörü
+                for (MultipartFile file : media) {
+                    // İsim çakışmasını önlemek için benzersiz bir isim oluştur
+                    String uniqueFileName = UUID.randomUUID() + "_" + file.getOriginalFilename();
+                    File tempFile = new File(tempDir, uniqueFileName);
+                    file.transferTo(tempFile);
+                    savedMediaPaths.add(tempFile.getAbsolutePath());
+                }
+            }
+
             SendSession session = sendingService.createSession(phoneNumbers.size());
             
-            // İşlemi arka planda başlat ve cevabı hemen dön (Uygulama kilitlenmesin diye)
-            sendingService.startSendingProcess(session.getSessionId(), phoneNumbers, message, minDelay, maxDelay, media);
+            // 2. KAYDEDİLEN DOSYA YOLLARINI SERVİSE GÖNDER
+            sendingService.startSendingProcess(session.getSessionId(), phoneNumbers, message, minDelay, maxDelay, savedMediaPaths);
 
             return ResponseEntity.ok(Map.of(
                     "sessionId", session.getSessionId(),
@@ -54,7 +69,6 @@ public class SendController {
 
     @GetMapping("/status/{sessionId}")
     public ResponseEntity<SendSession> getStatus(@PathVariable String sessionId) {
-        // Flutter bu adrese 2 saniyede bir istek atıp logları okuyacak
         return ResponseEntity.ok(sendingService.getSession(sessionId));
     }
 
@@ -62,12 +76,9 @@ public class SendController {
     public ResponseEntity<?> stopSending(@PathVariable String sessionId) {
         sendingService.stopSession(sessionId);
         SendSession session = sendingService.getSession(sessionId);
-        
         return ResponseEntity.ok(Map.of(
                 "sessionId", session.getSessionId(),
-                "status", session.getStatus().toString(),
-                "sentCount", session.getSentCount(),
-                "totalNumbers", session.getTotalNumbers()
+                "status", session.getStatus().toString()
         ));
     }
 }
