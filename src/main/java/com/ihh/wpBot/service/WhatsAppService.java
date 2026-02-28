@@ -21,29 +21,42 @@ public class WhatsAppService {
             WebDriverManager.chromedriver().setup();
             ChromeOptions options = new ChromeOptions();
             
-            // Tahsin abinin her seferinde QR kod okutmaması için oturum verilerini klasöre kaydediyoruz
-            options.addArguments("user-data-dir=C:/Temp/WhatsAppBotProfile"); 
+            // Oturumu kaydetme ayarı
+            options.addArguments("user-data-dir=" + System.getProperty("user.home") + "/WhatsAppBotProfile"); 
             
             driver = new ChromeDriver(options);
-            wait = new WebDriverWait(driver, Duration.ofSeconds(30));
+            wait = new WebDriverWait(driver, Duration.ofSeconds(60));
             
             driver.get("https://web.whatsapp.com");
+            
+            // Sol menü yüklenene kadar bekle
+            wait.until(ExpectedConditions.presenceOfElementLocated(By.id("pane-side")));
         }
     }
 
     public void sendMessage(String phoneNumber, String message) throws InterruptedException {
-        // WhatsApp API linki üzerinden direkt sohbete git
-        driver.get("https://web.whatsapp.com/send?phone=" + phoneNumber + "&text=" + message);
+        // 1. URL'de metin göndermiyoruz, SADECE numaraya gidip sohbeti açıyoruz
+        driver.get("https://web.whatsapp.com/send?phone=" + phoneNumber);
         
-        // Gönder butonunun ekranda belirmesini (yüklenmesini) bekle
-        WebElement sendButton = wait.until(ExpectedConditions.elementToBeClickable(
-                By.xpath("//span[@data-icon='send']")
+        // 2. Mesaj yazma kutusunu bul (WhatsApp'ın en stabil HTML elementidir)
+        // main panelinin içindeki footer'da yer alan ve yazı yazılabilir (contenteditable) olan div.
+        WebElement messageBox = wait.until(ExpectedConditions.elementToBeClickable(
+                By.xpath("//*[@id='main']//footer//div[@contenteditable='true']")
         ));
         
-        // Butona tıkla ve mesajı gönder
-        sendButton.click();
+        // 3. İnsan gibi kutuya tıkla (odaklan)
+        messageBox.click();
         
-        // Mesajın gitmesi ve tik olması için 2 saniye bekle
+        // 4. Mesajı kutuya yazdır
+        messageBox.sendKeys(message);
+        
+        // 5. WhatsApp'ın (React.js'in) yazıyı algılaması için çok kısa bir an bekle
+        Thread.sleep(500); 
+        
+        // 6. Klavyeden "ENTER" tuşuna bas! (Buton arama derdi bitti)
+        messageBox.sendKeys(Keys.ENTER);
+        
+        // Mesajın sunucuya iletilmesi (Tik olması) için bekle
         Thread.sleep(2000); 
     }
 
