@@ -1,16 +1,18 @@
+
 package com.ihh.wpBot.controller;
 
+import com.ihh.wpBot.model.MediaRequest;
+import com.ihh.wpBot.model.SendRequest;
 import com.ihh.wpBot.model.SendSession;
 import com.ihh.wpBot.service.MessageSendingService;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
+import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -27,38 +29,40 @@ public class SendController {
     }
 
     @PostMapping("/start")
-    public ResponseEntity<?> startSending(
-            @RequestParam("phoneNumbers") String phoneNumbersJson,
-            @RequestParam(value = "message", required = false) String message,
-            @RequestParam("minDelay") int minDelay,
-            @RequestParam("maxDelay") int maxDelay,
-            @RequestParam(value = "media", required = false) MultipartFile[] media) {
-
+    public ResponseEntity<?> startSending(@RequestBody SendRequest request) {
         try {
-            ObjectMapper mapper = new ObjectMapper();
-            List<String> phoneNumbers = mapper.readValue(phoneNumbersJson, new TypeReference<List<String>>() {});
-
-            // 1. MEDYA DOSYALARINI GEÇİCİ KLASÖRE KAYDET
+            // 1. BASE64 MEDYA DOSYALARINI DEKOD EDİP GEÇİCİ KLASÖRE YAZ
             List<String> savedMediaPaths = new ArrayList<>();
-            if (media != null && media.length > 0) {
+            if (request.getMedia() != null && !request.getMedia().isEmpty()) {
                 String tempDir = System.getProperty("java.io.tmpdir"); // Bilgisayarın Temp klasörü
-                for (MultipartFile file : media) {
-                    // İsim çakışmasını önlemek için benzersiz bir isim oluştur
-                    String uniqueFileName = UUID.randomUUID() + "_" + file.getOriginalFilename();
+                for (MediaRequest mediaReq : request.getMedia()) {
+                    // Base64 metnini tekrar Byte dizisine çevir
+                    byte[] decodedBytes = Base64.getDecoder().decode(mediaReq.getBase64Data());
+                    
+                    String uniqueFileName = UUID.randomUUID() + "_" + mediaReq.getFileName();
                     File tempFile = new File(tempDir, uniqueFileName);
-                    file.transferTo(tempFile);
+                    
+                    // Byte dizisini fiziksel dosya olarak kaydet
+                    Files.write(tempFile.toPath(), decodedBytes);
                     savedMediaPaths.add(tempFile.getAbsolutePath());
                 }
             }
 
-            SendSession session = sendingService.createSession(phoneNumbers.size());
+            SendSession session = sendingService.createSession(request.getPhoneNumbers().size());
             
             // 2. KAYDEDİLEN DOSYA YOLLARINI SERVİSE GÖNDER
-            sendingService.startSendingProcess(session.getSessionId(), phoneNumbers, message, minDelay, maxDelay, savedMediaPaths);
+            sendingService.startSendingProcess(
+                    session.getSessionId(), 
+                    request.getPhoneNumbers(), 
+                    request.getMessage(), 
+                    request.getMinDelay(), 
+                    request.getMaxDelay(), 
+                    savedMediaPaths
+            );
 
             return ResponseEntity.ok(Map.of(
                     "sessionId", session.getSessionId(),
-                    "totalNumbers", phoneNumbers.size(),
+                    "totalNumbers", request.getPhoneNumbers().size(),
                     "status", session.getStatus().toString()
             ));
 

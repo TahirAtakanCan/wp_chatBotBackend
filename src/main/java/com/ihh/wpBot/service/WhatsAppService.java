@@ -59,44 +59,43 @@ public class WhatsAppService {
         }
 
         // ==========================================
-        // MEDYA GÖNDERİMİ
+        // 1. ADIM: ÖNCE SADECE MEDYAYI GÖNDER
         // ==========================================
         if (mediaPaths != null && !mediaPaths.isEmpty()) {
             
-            // 1. WhatsApp'ın gizli resim/video yükleme alanını (input type=file) bul
+            // Gizli dosya yükleme elementini bul
             WebElement fileInput = driver.findElement(By.xpath("//input[@type='file' and contains(@accept, 'image')]"));
             
-            // Birden fazla dosyayı Selenium ile tek seferde yüklemek için yolları \n ile birleştiriyoruz
+            // Dosyaları yükle
             String combinedPaths = String.join("\n", mediaPaths);
-            fileInput.sendKeys(combinedPaths); // Fiziksel yolları browser'a bas
+            fileInput.sendKeys(combinedPaths); 
             
-            // 2. Önizleme penceresinin açılmasını bekle
-            Thread.sleep(2000); 
+            // Önizleme ekranının açılması için biraz daha uzun bekle
+            Thread.sleep(2500); 
             
-            // 3. Mesaj varsa, resmin altındaki açıklama (caption) kutusunu bul ve yaz
-            if (message != null && !message.isEmpty()) {
-                WebElement captionBox = wait.until(ExpectedConditions.elementToBeClickable(
-                        By.xpath("//div[@role='textbox' or @contenteditable='true']")
-                ));
-                captionBox.click();
-                captionBox.sendKeys(message);
-                Thread.sleep(500);
-            }
+            // Açıklama yazmadan, direkt önizleme ekranındaki gönder butonuna bas
+            WebElement sendMediaBtn = wait.until(ExpectedConditions.elementToBeClickable(
+                    By.xpath("//span[@data-icon='send']")
+            ));
+            sendMediaBtn.click();
             
-            // 4. "Gönder" butonuna bas (Önizleme ekranındaki gönder butonu)
-            WebElement sendBtn = driver.findElement(By.xpath("//span[@data-icon='send']"));
-            sendBtn.click();
-            Thread.sleep(3000); // Yüklenip gitmesi için bekle
-            
-        } 
+            // Resmin yola çıkması ve ana ekrana dönülmesi için bekle
+            Thread.sleep(3000); 
+        }
+
         // ==========================================
-        // SADECE METİN GÖNDERİMİ (Medya yoksa)
+        // 2. ADIM: SONRA METNİ GÖNDER (Ayrı baloncuk)
         // ==========================================
-        else {
-            WebElement messageBox = driver.findElement(messageBoxLocator);
+        if (message != null && !message.trim().isEmpty()) {
+            // Ana sohbet ekranındaki yazı kutusunu tekrar bul
+            WebElement messageBox = wait.until(ExpectedConditions.elementToBeClickable(messageBoxLocator));
             messageBox.click();
+            
+            // Yazıyı yaz
             messageBox.sendKeys(message);
             Thread.sleep(500); 
+            
+            // İnsan gibi Enter'a bas
             messageBox.sendKeys(Keys.ENTER);
             Thread.sleep(2000); 
         }
