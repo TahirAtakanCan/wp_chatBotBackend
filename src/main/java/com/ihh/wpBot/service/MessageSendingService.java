@@ -81,6 +81,10 @@ public class MessageSendingService {
                     
                 } catch (Exception e) {
                     session.addLog(getFormattedTime() + " [HATA] " + phone + " numarasına gönderilemedi.");
+                } finally {
+                    // Başarılı da olsa başarısız da olsa bu numarayı "işlendi" sayıyoruz ki bar ilerlesin
+                    session.setSentCount(session.getSentCount() + 1);
+                    session.setProgress((double) session.getSentCount() / session.getTotalNumbers());
                 }
 
                 // Son numara değilse ve durdurulmadıysa rastgele süre bekle
