@@ -28,36 +28,27 @@ public class SendController {
         this.sendingService = sendingService;
     }
 
+    // startSending metodunun içini şu şekilde değiştir:
     @PostMapping("/start")
     public ResponseEntity<?> startSending(@RequestBody SendRequest request) {
         try {
-            // 1. BASE64 MEDYA DOSYALARINI DEKOD EDİP GEÇİCİ KLASÖRE YAZ
-            List<String> savedMediaPaths = new ArrayList<>();
-            if (request.getMedia() != null && !request.getMedia().isEmpty()) {
-                String tempDir = System.getProperty("java.io.tmpdir"); // Bilgisayarın Temp klasörü
-                for (MediaRequest mediaReq : request.getMedia()) {
-                    // Base64 metnini tekrar Byte dizisine çevir
-                    byte[] decodedBytes = Base64.getDecoder().decode(mediaReq.getBase64Data());
-                    
-                    String uniqueFileName = UUID.randomUUID() + "_" + mediaReq.getFileName();
-                    File tempFile = new File(tempDir, uniqueFileName);
-                    
-                    // Byte dizisini fiziksel dosya olarak kaydet
-                    Files.write(tempFile.toPath(), decodedBytes);
-                    savedMediaPaths.add(tempFile.getAbsolutePath());
-                }
-            }
-
             SendSession session = sendingService.createSession(request.getPhoneNumbers().size());
             
-            // 2. KAYDEDİLEN DOSYA YOLLARINI SERVİSE GÖNDER
+            // Flutter'dan gelen URL listesini (request.getMedia()) direkt servise yolluyoruz!
+            List<String> mediaUrls = new ArrayList<>();
+            if (request.getMedia() != null) {
+                for (MediaRequest media : request.getMedia()) {
+                    mediaUrls.add(media.getUrl());
+                }
+            }
+            
             sendingService.startSendingProcess(
                     session.getSessionId(), 
                     request.getPhoneNumbers(), 
                     request.getMessage(), 
                     request.getMinDelay(), 
                     request.getMaxDelay(), 
-                    savedMediaPaths
+                    mediaUrls 
             );
 
             return ResponseEntity.ok(Map.of(

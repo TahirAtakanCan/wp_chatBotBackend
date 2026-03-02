@@ -30,7 +30,7 @@ public class WhatsAppService {
         }
     }
 
-    public void sendMessage(String phoneNumber, String message, List<String> mediaPaths) throws Exception {
+    public void sendMessage(String phoneNumber, String message, List<String> mediaUrls) throws Exception {
         driver.get("https://web.whatsapp.com/send?phone=" + phoneNumber);
         
         long startTime = System.currentTimeMillis();
@@ -52,51 +52,45 @@ public class WhatsAppService {
 
         if (isInvalidNumber) {
             try { driver.findElement(errorDialogButtonLocator).click(); Thread.sleep(500); } catch (Exception ignored) {}
-            throw new Exception("Numara WhatsApp'ta yok.");
+            throw new Exception("Numara WhatsApp'ta kayıtlı değil.");
         }
         if (!isChatOpened) {
-            throw new Exception("Sohbet açılamadı (Zaman Aşımı).");
+            throw new Exception("Sohbet ekranı açılamadı.");
         }
 
         // ==========================================
-        // 1. ADIM: ÖNCE SADECE MEDYAYI GÖNDER
+        // YENİ SİSTEM: LİNK ÖNİZLEME (URL PREVIEW)
         // ==========================================
-        if (mediaPaths != null && !mediaPaths.isEmpty()) {
-            
-            // Gizli dosya yükleme elementini bul
-            WebElement fileInput = driver.findElement(By.xpath("//input[@type='file' and contains(@accept, 'image')]"));
-            
-            // Dosyaları yükle
-            String combinedPaths = String.join("\n", mediaPaths);
-            fileInput.sendKeys(combinedPaths); 
-            
-            // Önizleme ekranının açılması için biraz daha uzun bekle
-            Thread.sleep(2500); 
-            
-            // Açıklama yazmadan, direkt önizleme ekranındaki gönder butonuna bas
-            WebElement sendMediaBtn = wait.until(ExpectedConditions.elementToBeClickable(
-                    By.xpath("//span[@data-icon='send']")
-            ));
-            sendMediaBtn.click();
-            
-            // Resmin yola çıkması ve ana ekrana dönülmesi için bekle
-            Thread.sleep(3000); 
+        WebElement messageBox = wait.until(ExpectedConditions.elementToBeClickable(messageBoxLocator));
+        messageBox.click();
+
+        // 1. Varsa Medya Linklerini Metnin Sonuna Ekle
+        String finalMessage = (message != null) ? message : "";
+        if (mediaUrls != null && !mediaUrls.isEmpty()) {
+            finalMessage += "\n\n"; 
+            for (String url : mediaUrls) {
+                finalMessage += url + "\n";
+            }
         }
 
-        // ==========================================
-        // 2. ADIM: SONRA METNİ GÖNDER (Ayrı baloncuk)
-        // ==========================================
-        if (message != null && !message.trim().isEmpty()) {
-            // Ana sohbet ekranındaki yazı kutusunu tekrar bul
-            WebElement messageBox = wait.until(ExpectedConditions.elementToBeClickable(messageBoxLocator));
-            messageBox.click();
+        // 2. Metni Paragraflı Şekilde Yaz
+        if (!finalMessage.trim().isEmpty()) {
+            String[] lines = finalMessage.split("\n");
+            for (int i = 0; i < lines.length; i++) {
+                messageBox.sendKeys(lines[i]); 
+                if (i < lines.length - 1) {
+                    messageBox.sendKeys(Keys.SHIFT, Keys.ENTER);
+                }
+            }
             
-            // Yazıyı yaz
-            messageBox.sendKeys(message);
-            Thread.sleep(500); 
+            // 3. ÇÖZÜMÜN KALBİ: WhatsApp'ın resmi çekip önizleme oluşturması için bekle!
+            if (mediaUrls != null && !mediaUrls.isEmpty()) {
+                Thread.sleep(5000); // İnternet hızına göre resmi çekmesi 3-5 sn sürer
+            } else {
+                Thread.sleep(500); // Sadece metinse beklemeye gerek yok
+            }
             
-            // İnsan gibi Enter'a bas
-            messageBox.sendKeys(Keys.ENTER);
+            messageBox.sendKeys(Keys.ENTER); 
             Thread.sleep(2000); 
         }
     }
