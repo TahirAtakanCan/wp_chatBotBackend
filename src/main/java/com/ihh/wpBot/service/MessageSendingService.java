@@ -56,14 +56,9 @@ public class MessageSendingService {
         if (session == null) return;
 
         session.setStatus(SendStatus.SENDING);
-        session.addLog(getFormattedTime() + " [SİSTEM] Tarayıcı başlatılıyor...");
+        session.addLog(getFormattedTime() + " [SİSTEM] Node.js mikroservisine bağlanılıyor...");
         
         try {
-            whatsAppService.initialize();
-            session.addLog(getFormattedTime() + " [SİSTEM] WhatsApp Web hazır. QR kod istenirse okutunuz.");
-
-            // Uygulama ilk açıldığında QR kod için ufak bir bekleme süresi verelim
-            Thread.sleep(5000);
 
             for (int i = session.getSentCount(); i < phoneNumbers.size(); i++) {
                 if (session.getStatus() == SendStatus.PAUSED) {

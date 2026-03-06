@@ -1,104 +1,79 @@
 package com.ihh.wpBot.service;
 
-import io.github.bonigarcia.wdm.WebDriverManager;
-import org.openqa.selenium.*;
-import org.openqa.selenium.chrome.ChromeDriver;
-import org.openqa.selenium.chrome.ChromeOptions;
-import org.openqa.selenium.support.ui.ExpectedConditions;
-import org.openqa.selenium.support.ui.WebDriverWait;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.RestTemplate;
 
-import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class WhatsAppService {
 
-    private WebDriver driver;
-    private WebDriverWait wait;
+    private static final String NODE_API_URL = "http://localhost:3000/send";
+    private static final int MAX_RETRIES = 3;
+    private static final long RETRY_WAIT_MS = 15_000; // Node.js client yeniden başlarken bekleme süresi
+    private final RestTemplate restTemplate = new RestTemplate();
 
-    public void initialize() {
-        if (driver == null) {
-            WebDriverManager.chromedriver().setup();
-            ChromeOptions options = new ChromeOptions();
-            options.addArguments("user-data-dir=" + System.getProperty("user.home") + "/WhatsAppBotProfile"); 
-            
-            driver = new ChromeDriver(options);
-            wait = new WebDriverWait(driver, Duration.ofSeconds(60));
-            driver.get("https://web.whatsapp.com");
-            wait.until(ExpectedConditions.presenceOfElementLocated(By.id("pane-side")));
-        }
-    }
-
+    /**
+     * Node.js mikroservisine HTTP POST isteği atarak mesaj gönderir.
+     * 503 (client yeniden başlıyor) veya detached frame hatası alırsa otomatik retry yapar.
+     *
+     * @param phoneNumber Hedef telefon numarası (örn: 905551234567)
+     * @param message     Gönderilecek metin (opsiyonel, null olabilir)
+     * @param mediaUrls   Medya URL listesi (opsiyonel, listedeki ilk URL kullanılır)
+     */
     public void sendMessage(String phoneNumber, String message, List<String> mediaUrls) throws Exception {
-        driver.get("https://web.whatsapp.com/send?phone=" + phoneNumber);
-        
-        long startTime = System.currentTimeMillis();
-        boolean isChatOpened = false;
-        boolean isInvalidNumber = false;
-        
-        By messageBoxLocator = By.xpath("//*[@id='main']//footer//div[@contenteditable='true']");
-        By errorDialogButtonLocator = By.xpath("//div[@role='dialog']//button"); 
+        Map<String, String> body = new HashMap<>();
+        body.put("number", phoneNumber);
 
-        while (System.currentTimeMillis() - startTime < 30000) { 
-            if (!driver.findElements(messageBoxLocator).isEmpty()) {
-                isChatOpened = true; break;
-            }
-            if (!driver.findElements(errorDialogButtonLocator).isEmpty()) {
-                isInvalidNumber = true; break;
-            }
-            Thread.sleep(1000); 
+        if (message != null && !message.isBlank()) {
+            body.put("message", message);
         }
 
-        if (isInvalidNumber) {
-            try { driver.findElement(errorDialogButtonLocator).click(); Thread.sleep(500); } catch (Exception ignored) {}
-            throw new Exception("Numara WhatsApp'ta kayıtlı değil.");
-        }
-        if (!isChatOpened) {
-            throw new Exception("Sohbet ekranı açılamadı.");
-        }
-
-        // ==========================================
-        // YENİ SİSTEM: LİNK ÖNİZLEME (URL PREVIEW)
-        // ==========================================
-        WebElement messageBox = wait.until(ExpectedConditions.elementToBeClickable(messageBoxLocator));
-        messageBox.click();
-
-        // 1. Varsa Medya Linklerini Metnin Sonuna Ekle
-        String finalMessage = (message != null) ? message : "";
         if (mediaUrls != null && !mediaUrls.isEmpty()) {
-            finalMessage += "\n\n"; 
-            for (String url : mediaUrls) {
-                finalMessage += url + "\n";
-            }
+            body.put("mediaUrl", mediaUrls.get(0));
         }
 
-        // 2. Metni Paragraflı Şekilde Yaz
-        if (!finalMessage.trim().isEmpty()) {
-            String[] lines = finalMessage.split("\n");
-            for (int i = 0; i < lines.length; i++) {
-                messageBox.sendKeys(lines[i]); 
-                if (i < lines.length - 1) {
-                    messageBox.sendKeys(Keys.SHIFT, Keys.ENTER);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        HttpEntity<Map<String, String>> request = new HttpEntity<>(body, headers);
+
+        Exception lastException = null;
+
+        for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            try {
+                restTemplate.postForEntity(NODE_API_URL, request, String.class);
+                return; // Başarılı — çık
+            } catch (HttpServerErrorException e) {
+                lastException = e;
+                String responseBody = e.getResponseBodyAsString();
+                boolean isRetryable = e.getStatusCode().value() == 503
+                        || responseBody.contains("detached Frame")
+                        || responseBody.contains("not ready");
+
+                if (isRetryable && attempt < MAX_RETRIES) {
+                    Thread.sleep(RETRY_WAIT_MS);
+                } else {
+                    break;
+                }
+            } catch (Exception e) {
+                lastException = e;
+                // Bağlantı hatası (Node.js kapalı vs.) — retry
+                if (attempt < MAX_RETRIES) {
+                    Thread.sleep(RETRY_WAIT_MS);
+                } else {
+                    break;
                 }
             }
-            
-            // 3. ÇÖZÜMÜN KALBİ: WhatsApp'ın resmi çekip önizleme oluşturması için bekle!
-            if (mediaUrls != null && !mediaUrls.isEmpty()) {
-                Thread.sleep(5000); // İnternet hızına göre resmi çekmesi 3-5 sn sürer
-            } else {
-                Thread.sleep(500); // Sadece metinse beklemeye gerek yok
-            }
-            
-            messageBox.sendKeys(Keys.ENTER); 
-            Thread.sleep(2000); 
         }
-    }
 
-    public void quit() {
-        if (driver != null) {
-            driver.quit();
-            driver = null;
-        }
+        throw new Exception("Node.js mikroservisine mesaj gönderilemedi (" + MAX_RETRIES + " deneme): "
+                + lastException.getMessage(), lastException);
     }
 }
