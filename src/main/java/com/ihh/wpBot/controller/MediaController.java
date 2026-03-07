@@ -14,57 +14,56 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/media")
-@CrossOrigin(origins = "*") // Flutter'dan erişim için
+@CrossOrigin(origins = "*") 
 public class MediaController {
 
     private static final String SERVER_BASE_URL = "http://94.130.231.165:8080";
-
-    // Resimlerin bilgisayarda kaydedileceği klasör
     private final String UPLOAD_DIR = "uploads/";
 
     public MediaController() {
         File dir = new File(UPLOAD_DIR);
         if (!dir.exists()) {
-            dir.mkdirs(); // Klasör yoksa oluştur
+            dir.mkdirs(); 
         }
     }
 
-    // 1. Sunucuya Resim Yükleme
     @PostMapping("/upload")
     public ResponseEntity<?> uploadMedia(@RequestParam("file") MultipartFile file) {
         try {
+            // 1. Dosya adındaki Türkçe karakterleri ve boşlukları temizle
             String originalFilename = file.getOriginalFilename();
+            String sanitized = "resim.jpg";
+            if (originalFilename != null) {
+                // Sadece harf, rakam, nokta ve alt tireye izin ver
+                sanitized = originalFilename.replaceAll("[^a-zA-Z0-9\\.\\-]", "_");
+            }
             
-            // ÇOK ÖNEMLİ: Boşlukları ve Türkçe karakterleri temizle, URL'in bozulmasını engelle
-            String sanitizedFilename = originalFilename != null ? originalFilename.replaceAll("[^a-zA-Z0-9\\.\\-]", "_") : "resim.jpg";
-            String safeFilename = System.currentTimeMillis() + "_" + sanitizedFilename;
+            String safeFilename = System.currentTimeMillis() + "_" + sanitized;
 
             Path targetPath = Paths.get(UPLOAD_DIR).resolve(safeFilename);
             Files.copy(file.getInputStream(), targetPath, StandardCopyOption.REPLACE_EXISTING);
 
-            // DİKKAT: /uploads/ yerine zaten aşağıda tanımlı olan /api/media/ metoduna yönlendiriyoruz
+            // 2. DİKKAT: URL formatı /api/media/{dosyaismi} olmalı, araya /uploads/ girmemeli!
             String fileUrl = SERVER_BASE_URL + "/api/media/" + safeFilename;
 
-            return ResponseEntity.ok(Map.of("url", fileUrl));
-        } catch (IOException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Yükleme hatası: " + e.getMessage()));
+            return ResponseEntity.ok(Collections.singletonMap("url", fileUrl));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Collections.singletonMap("error", "Hata: " + e.getMessage()));
         }
     }
 
-    // 2. Yüklü Resimlerin Listesini Getirme (Flutter Medya Seçici için)
     @GetMapping("/list")
     public ResponseEntity<List<String>> listMedia() {
         try {
             List<String> files = Files.walk(Paths.get(UPLOAD_DIR))
                     .filter(Files::isRegularFile)
-                    // Her dosya için dışarıdan erişilebilecek URL oluşturuyoruz
-                    .map(path -> SERVER_BASE_URL + "/uploads/" + path.getFileName().toString())
+                    .map(path -> SERVER_BASE_URL + "/api/media/" + path.getFileName().toString())
                     .collect(Collectors.toList());
             return ResponseEntity.ok(files);
         } catch (IOException e) {
@@ -72,7 +71,6 @@ public class MediaController {
         }
     }
 
-    // 3. Resmi URL Üzerinden Dışarı Sunma (WhatsApp'ın resmi çekeceği yer)
     @GetMapping("/{filename}")
     public ResponseEntity<Resource> getMedia(@PathVariable String filename) {
         try {
@@ -80,7 +78,7 @@ public class MediaController {
             Resource resource = new UrlResource(file.toUri());
             if (resource.exists() || resource.isReadable()) {
                 return ResponseEntity.ok()
-                        .contentType(MediaType.IMAGE_JPEG) // Önizleme için formatı belirtiyoruz
+                        .contentType(MediaType.IMAGE_JPEG) 
                         .body(resource);
             } else {
                 return ResponseEntity.notFound().build();
