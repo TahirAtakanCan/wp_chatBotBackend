@@ -13,14 +13,18 @@ import java.net.MalformedURLException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/media")
 @CrossOrigin(origins = "*") // Flutter'dan erişim için
 public class MediaController {
-    
+
+    private static final String SERVER_BASE_URL = "http://94.130.231.165:8080";
+
     // Resimlerin bilgisayarda kaydedileceği klasör
     private final String UPLOAD_DIR = "uploads/";
 
@@ -31,15 +35,23 @@ public class MediaController {
         }
     }
 
-    // 1. Sunucuya Resim Yükleme (Admin için)
+    // 1. Sunucuya Resim Yükleme – timestamp prefix ile isim çakışması önlenir
     @PostMapping("/upload")
-    public ResponseEntity<String> uploadMedia(@RequestParam("file") MultipartFile file) {
+    public ResponseEntity<?> uploadMedia(@RequestParam("file") MultipartFile file) {
         try {
-            Path path = Paths.get(UPLOAD_DIR + file.getOriginalFilename());
-            Files.write(path, file.getBytes());
-            return ResponseEntity.ok("Başarıyla yüklendi: " + file.getOriginalFilename());
+            // Orijinal dosya adının başına timestamp ekle
+            String originalFilename = file.getOriginalFilename();
+            String safeFilename = System.currentTimeMillis() + "_" + originalFilename;
+
+            Path targetPath = Paths.get(UPLOAD_DIR).resolve(safeFilename);
+            Files.copy(file.getInputStream(), targetPath, StandardCopyOption.REPLACE_EXISTING);
+
+            // Kalıcı erişim URL'i oluştur
+            String fileUrl = SERVER_BASE_URL + "/uploads/" + safeFilename;
+
+            return ResponseEntity.ok(Map.of("url", fileUrl));
         } catch (IOException e) {
-            return ResponseEntity.badRequest().body("Yükleme hatası: " + e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", "Yükleme hatası: " + e.getMessage()));
         }
     }
 
@@ -50,7 +62,7 @@ public class MediaController {
             List<String> files = Files.walk(Paths.get(UPLOAD_DIR))
                     .filter(Files::isRegularFile)
                     // Her dosya için dışarıdan erişilebilecek URL oluşturuyoruz
-                    .map(path -> "http://localhost:8080/api/media/" + path.getFileName().toString())
+                    .map(path -> SERVER_BASE_URL + "/uploads/" + path.getFileName().toString())
                     .collect(Collectors.toList());
             return ResponseEntity.ok(files);
         } catch (IOException e) {
