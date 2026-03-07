@@ -31,14 +31,19 @@ public class SendController {
         try {
             SendSession session = sendingService.createSession(request.getPhoneNumbers().size());
             
-            // Flutter'dan gelen URL listesini (request.getMedia()) direkt servise yolluyoruz!
+            // request.getMedia() üzerinden gelen URL'leri alıyoruz
             List<String> mediaUrls = new ArrayList<>();
-            if (request.getMedia() != null) {
-                for (MediaRequest media : request.getMedia()) {
-                    mediaUrls.add(media.getUrl());
+            
+            if (request.getMedia() != null && !request.getMedia().isEmpty()) {
+                for (MediaRequest m : request.getMedia()) {
+                    // Node.js ve Java aynı makinede! Güvenlik duvarı engeline takılmamak için 
+                    // Dış IP'yi "localhost" olarak değiştirip Node.js'e öyle veriyoruz.
+                    String safeUrl = m.getUrl().replace("94.130.231.165", "localhost");
+                    mediaUrls.add(safeUrl);
                 }
             }
-            
+
+            // MessageSendingService'e mediaUrls parametresini yolluyoruz
             sendingService.startSendingProcess(
                     session.getSessionId(), 
                     request.getPhoneNumbers(), 

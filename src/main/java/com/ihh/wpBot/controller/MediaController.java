@@ -35,19 +35,21 @@ public class MediaController {
         }
     }
 
-    // 1. Sunucuya Resim Yükleme – timestamp prefix ile isim çakışması önlenir
+    // 1. Sunucuya Resim Yükleme
     @PostMapping("/upload")
     public ResponseEntity<?> uploadMedia(@RequestParam("file") MultipartFile file) {
         try {
-            // Orijinal dosya adının başına timestamp ekle
             String originalFilename = file.getOriginalFilename();
-            String safeFilename = System.currentTimeMillis() + "_" + originalFilename;
+            
+            // ÇOK ÖNEMLİ: Boşlukları ve Türkçe karakterleri temizle, URL'in bozulmasını engelle
+            String sanitizedFilename = originalFilename != null ? originalFilename.replaceAll("[^a-zA-Z0-9\\.\\-]", "_") : "resim.jpg";
+            String safeFilename = System.currentTimeMillis() + "_" + sanitizedFilename;
 
             Path targetPath = Paths.get(UPLOAD_DIR).resolve(safeFilename);
             Files.copy(file.getInputStream(), targetPath, StandardCopyOption.REPLACE_EXISTING);
 
-            // Kalıcı erişim URL'i oluştur
-            String fileUrl = SERVER_BASE_URL + "/uploads/" + safeFilename;
+            // DİKKAT: /uploads/ yerine zaten aşağıda tanımlı olan /api/media/ metoduna yönlendiriyoruz
+            String fileUrl = SERVER_BASE_URL + "/api/media/" + safeFilename;
 
             return ResponseEntity.ok(Map.of("url", fileUrl));
         } catch (IOException e) {
