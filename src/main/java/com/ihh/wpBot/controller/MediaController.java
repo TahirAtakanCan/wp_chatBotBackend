@@ -1,5 +1,6 @@
 package com.ihh.wpBot.controller;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.http.MediaType;
@@ -23,7 +24,9 @@ import java.util.stream.Collectors;
 @CrossOrigin(origins = "*") 
 public class MediaController {
 
-    private static final String SERVER_BASE_URL = "http://94.130.231.165:8080";
+    @Value("${app.server.url}")
+    private String serverBaseUrl;
+
     private final String UPLOAD_DIR = "uploads/";
 
     public MediaController() {
@@ -50,7 +53,7 @@ public class MediaController {
             Files.copy(file.getInputStream(), targetPath, StandardCopyOption.REPLACE_EXISTING);
 
             // 2. DİKKAT: URL formatı /api/media/{dosyaismi} olmalı, araya /uploads/ girmemeli!
-            String fileUrl = SERVER_BASE_URL + "/api/media/" + safeFilename;
+            String fileUrl = serverBaseUrl + "/api/media/" + safeFilename;
 
             return ResponseEntity.ok(Collections.singletonMap("url", fileUrl));
         } catch (Exception e) {
@@ -63,7 +66,7 @@ public class MediaController {
         try {
             List<String> files = Files.walk(Paths.get(UPLOAD_DIR))
                     .filter(Files::isRegularFile)
-                    .map(path -> SERVER_BASE_URL + "/api/media/" + path.getFileName().toString())
+                    .map(path -> serverBaseUrl + "/api/media/" + path.getFileName().toString())
                     .collect(Collectors.toList());
             return ResponseEntity.ok(files);
         } catch (IOException e) {
