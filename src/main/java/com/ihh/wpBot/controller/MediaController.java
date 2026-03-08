@@ -3,9 +3,13 @@ package com.ihh.wpBot.controller;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
@@ -17,6 +21,7 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestController
@@ -88,6 +93,27 @@ public class MediaController {
             }
         } catch (MalformedURLException e) {
             return ResponseEntity.badRequest().build();
+        }
+    }
+
+    // ─── Base64 resmi Node.js'e proxy'le ───
+    @PostMapping("/send")
+    public ResponseEntity<?> sendMediaToNode(@RequestBody Map<String, String> payload) {
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+
+            HttpEntity<Map<String, String>> request = new HttpEntity<>(payload, headers);
+
+            RestTemplate restTemplate = new RestTemplate();
+            ResponseEntity<String> response = restTemplate.postForEntity(
+                    "http://localhost:3000/send-media", request, String.class);
+
+            return ResponseEntity.status(response.getStatusCode()).body(response.getBody());
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Collections.singletonMap("error",
+                            "Node.js servisine bağlanılamadı: " + e.getMessage()));
         }
     }
 }
