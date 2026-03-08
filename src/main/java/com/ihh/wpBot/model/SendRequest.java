@@ -5,6 +5,7 @@ import java.util.List;
 
 @Data
 public class SendRequest {
+    private String sessionId;
     private List<String> phoneNumbers;
     private String message;
     private int minDelay;

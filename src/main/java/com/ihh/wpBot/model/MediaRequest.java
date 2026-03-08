@@ -2,11 +2,20 @@ package com.ihh.wpBot.model;
 
 public class MediaRequest {
 
+    private String sessionId;
     private String url;
     private String type;
     private String fileName;
 
     public MediaRequest() {}
+
+    public String getSessionId() {
+        return sessionId;
+    }
+
+    public void setSessionId(String sessionId) {
+        this.sessionId = sessionId;
+    }
 
     public String getUrl() {
         return url;

@@ -48,7 +48,7 @@ public class MessageSendingService {
     }
 
     @Async
-    public void startSendingProcess(String sessionId, List<String> phoneNumbers, String message, 
+    public void startSendingProcess(String sessionId, String whatsappSessionId, List<String> phoneNumbers, String message, 
                                     int minDelay, int maxDelay, List<String> mediaPaths) {
         
         SendSession session = activeSessions.get(sessionId);
@@ -68,8 +68,8 @@ public class MessageSendingService {
                 session.setCurrentNumber(phone);
 
                 try {
-                    // Artık mediaPaths'i de gönderiyoruz
-                    whatsAppService.sendMessage(phone, message, mediaPaths); 
+                    // Artık mediaPaths'i ve sessionId'yi de gönderiyoruz
+                    whatsAppService.sendMessage(whatsappSessionId, phone, message, mediaPaths); 
                     String medyaLog = mediaPaths.isEmpty() ? "" : " (Medya ile)";
                     session.addLog(getFormattedTime() + " [GÖNDER] " + phone + " numarasına gönderildi" + medyaLog + ". ✔");
                 } catch (Exception e) {

@@ -43,9 +43,10 @@ public class SendController {
                 }
             }
 
-            // MessageSendingService'e mediaUrls parametresini yolluyoruz
+            // MessageSendingService'e mediaUrls ve whatsappSessionId parametresini yolluyoruz
             sendingService.startSendingProcess(
                     session.getSessionId(), 
+                    request.getSessionId(),
                     request.getPhoneNumbers(), 
                     request.getMessage(), 
                     request.getMinDelay(), 

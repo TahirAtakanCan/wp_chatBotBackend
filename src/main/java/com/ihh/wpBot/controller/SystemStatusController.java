@@ -4,6 +4,7 @@ import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.RestTemplate;
 
@@ -14,6 +15,7 @@ import java.util.Map;
 public class SystemStatusController {
 
     private static final String NODE_STATUS_URL = "http://localhost:3000/status";
+    private static final String NODE_BASE_URL = "http://localhost:3000";
 
     private final RestTemplate restTemplate;
 
@@ -37,6 +39,26 @@ public class SystemStatusController {
             errorBody.put("connected", false);
             errorBody.put("user", null);
             errorBody.put("error", "Node.js servisine ulaşılamıyor");
+            return ResponseEntity.status(503).body(errorBody);
+        }
+    }
+
+    @GetMapping("/system-status/{sessionId}")
+    public ResponseEntity<Map<String, Object>> getSessionStatus(@PathVariable String sessionId) {
+        try {
+            ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                    NODE_BASE_URL + "/session/" + sessionId + "/status",
+                    HttpMethod.GET,
+                    null,
+                    new ParameterizedTypeReference<>() {}
+            );
+            return ResponseEntity.ok(response.getBody());
+        } catch (Exception e) {
+            Map<String, Object> errorBody = new HashMap<>();
+            errorBody.put("qr", null);
+            errorBody.put("connected", false);
+            errorBody.put("user", null);
+            errorBody.put("error", "Node.js servisine ulaşılamıyor veya session bulunamadı");
             return ResponseEntity.status(503).body(errorBody);
         }
     }
