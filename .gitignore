@@ -34,3 +34,6 @@ build/
 
 # uploads klasörü (kullanıcı yüklemeleri için)
 uploads/
+
+# H2 veritabanı dosyaları
+data/

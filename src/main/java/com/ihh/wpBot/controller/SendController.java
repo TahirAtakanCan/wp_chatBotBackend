@@ -7,6 +7,7 @@ import com.ihh.wpBot.model.SendSession;
 import com.ihh.wpBot.service.MessageSendingService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 
@@ -16,6 +17,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/send")
+@PreAuthorize("isAuthenticated()")
 public class SendController {
 
     private final MessageSendingService sendingService;
