@@ -25,9 +25,9 @@ public class UserService implements UserDetailsService {
     }
 
     @PostConstruct
-    public void init() {
-        if (userRepository.count() == 0) {
-            createUser("tahsin", "Admin123!", Role.ADMIN, null);
+        public void init() {
+            if (userRepository.findByUsername("TahsinIsik").isEmpty()) {
+                createUser("TahsinIsik", "159753", Role.ADMIN, null);
         }
     }
 
