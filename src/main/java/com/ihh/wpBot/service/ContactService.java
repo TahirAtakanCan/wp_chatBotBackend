@@ -13,6 +13,14 @@ import java.util.stream.Collectors;
 
 @Service
 public class ContactService {
+        @Transactional
+        public void deleteAllByUser(String username, String role) {
+            if (role.equals("ADMIN")) {
+                contactRepository.deleteAll();
+            } else {
+                contactRepository.deleteByCreatedBy(username);
+            }
+        }
     @Autowired
     private ContactRepository contactRepository;
 

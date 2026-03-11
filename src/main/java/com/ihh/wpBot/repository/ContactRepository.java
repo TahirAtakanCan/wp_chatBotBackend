@@ -10,4 +10,5 @@ import java.util.List;
 public interface ContactRepository extends JpaRepository<Contact, Long> {
     List<Contact> findByCreatedBy(String createdBy);
     List<Contact> findByNameContainingIgnoreCaseOrPhoneContaining(String name, String phone);
+    void deleteByCreatedBy(String createdBy);
 }

@@ -17,6 +17,16 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/contacts")
 public class ContactController {
+        @Autowired
+        private com.ihh.wpBot.config.JwtUtil jwtUtil;
+        @DeleteMapping("/all")
+        public ResponseEntity<?> deleteAll(@RequestHeader("Authorization") String authHeader) {
+            String token = authHeader.substring(7);
+            String username = jwtUtil.extractUsername(token);
+            String role = jwtUtil.extractRole(token);
+            contactService.deleteAllByUser(username, role);
+            return ResponseEntity.ok().build();
+        }
     @Autowired
     private ContactService contactService;
 
