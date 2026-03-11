@@ -31,6 +31,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/login", "/api/auth/setup").permitAll()
                         .requestMatchers("/api/media/**").permitAll()
                     .requestMatchers("/api/templates/**").authenticated()
+                    .requestMatchers("/api/contacts/**").authenticated()
                         .requestMatchers("/h2-console/**").permitAll()
                         .anyRequest().authenticated()
                 )
