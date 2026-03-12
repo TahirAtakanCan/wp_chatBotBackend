@@ -48,57 +48,79 @@ public class MessageSendingService {
     }
 
     @Async
-    public void startSendingProcess(String sessionId, String whatsappSessionId, List<String> phoneNumbers, String message, 
-                                    int minDelay, int maxDelay, List<String> mediaPaths) {
-        
+    public void startSendingProcess(
+            String sessionId,
+            String whatsappSessionId,
+            List<String> phoneNumbers,
+            String message,
+            int minDelay,
+            int maxDelay,
+            List<String> mediaPaths,
+            List<String> personalizedMessages,
+            boolean isPersonalized
+    ) {
         SendSession session = activeSessions.get(sessionId);
         if (session == null) return;
 
         session.setStatus(SendStatus.SENDING);
         session.addLog(getFormattedTime() + " [SİSTEM] Node.js mikroservisine bağlanılıyor...");
-        
-        try {
 
+        try {
             for (int i = session.getSentCount(); i < phoneNumbers.size(); i++) {
-                if (session.getStatus() == SendStatus.PAUSED) {
-                    break;
-                }
+                if (session.getStatus() == SendStatus.PAUSED) break;
 
                 String phone = phoneNumbers.get(i);
                 session.setCurrentNumber(phone);
 
-                try {
-                    // Artık mediaPaths'i ve sessionId'yi de gönderiyoruz
-                    whatsAppService.sendMessage(whatsappSessionId, phone, message, mediaPaths); 
-                    String medyaLog = mediaPaths.isEmpty() ? "" : " (Medya ile)";
-                    session.addLog(getFormattedTime() + " [GÖNDER] " + phone + " numarasına gönderildi" + medyaLog + ". ✔");
-                } catch (Exception e) {
-                    session.addLog(getFormattedTime() + " [HATA] " + phone + " - " + e.getMessage());
-                } finally {
-                    session.setSentCount(session.getSentCount() + 1);
-                    session.setProgress((double) session.getSentCount() / session.getTotalNumbers());
+                // Kişiselleştirilmiş mesajı belirle
+                String finalMessage = message;
+                if (isPersonalized
+                        && personalizedMessages != null
+                        && i < personalizedMessages.size()) {
+                    finalMessage = personalizedMessages.get(i);
                 }
 
-                // Son numara değilse ve durdurulmadıysa rastgele süre bekle
-                if (i < phoneNumbers.size() - 1 && session.getStatus() != SendStatus.PAUSED) {
-                    int delaySeconds = random.nextInt((maxDelay - minDelay) + 1) + minDelay;
-                    session.addLog(getFormattedTime() + " [BEKLE] " + delaySeconds + " saniye bekleniyor...");
+                try {
+                    whatsAppService.sendMessage(
+                            whatsappSessionId, phone, finalMessage, mediaPaths);
+                    String medyaLog = mediaPaths.isEmpty() ? "" : " (Medya ile)";
+                    session.addLog(getFormattedTime()
+                            + " [GÖNDER] " + phone
+                            + " numarasına gönderildi" + medyaLog + ". ✔");
+                } catch (Exception e) {
+                    session.addLog(getFormattedTime()
+                            + " [HATA] " + phone + " - " + e.getMessage());
+                } finally {
+                    session.setSentCount(session.getSentCount() + 1);
+                    session.setProgress(
+                            (double) session.getSentCount() / session.getTotalNumbers());
+                }
+
+                if (i < phoneNumbers.size() - 1
+                        && session.getStatus() != SendStatus.PAUSED) {
+                    int delaySeconds =
+                            random.nextInt((maxDelay - minDelay) + 1) + minDelay;
+                    session.addLog(getFormattedTime()
+                            + " [BEKLE] " + delaySeconds + " saniye bekleniyor...");
                     Thread.sleep(delaySeconds * 1000L);
                 }
             }
-            
+
             if (session.getStatus() != SendStatus.PAUSED) {
                 session.setStatus(SendStatus.COMPLETED);
-                session.addLog(getFormattedTime() + " [SİSTEM] Tüm gönderimler tamamlandı.");
+                session.addLog(getFormattedTime()
+                        + " [SİSTEM] Tüm gönderimler tamamlandı.");
             }
 
         } catch (Exception e) {
             session.setStatus(SendStatus.FAILED);
-            session.addLog(getFormattedTime() + " [KRİTİK HATA] Gönderim çöktü: " + e.getMessage());
+            session.addLog(getFormattedTime()
+                    + " [KRİTİK HATA] Gönderim çöktü: " + e.getMessage());
         }
     }
 
     private String getFormattedTime() {
-        return "[" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")) + "]";
+        return "[" + LocalDateTime.now()
+                .format(DateTimeFormatter.ofPattern("HH:mm:ss")) + "]";
     }
 }

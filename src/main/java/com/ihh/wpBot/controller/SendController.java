@@ -28,12 +28,19 @@ public class SendController {
 
     @PostMapping("/start")
     public ResponseEntity<?> startSending(@RequestBody SendRequest request) {
+        System.out.println("=== JAVA DEBUG ===");
+        System.out.println("isPersonalized: " + request.isPersonalized());
+        System.out.println("personalizedMessages: " + request.getPersonalizedMessages());
+        System.out.println("phoneNumbers: " + request.getPhoneNumbers());
+        System.out.println("message: " + request.getMessage());
+        System.out.println("==================");
+
         try {
-            // "İsim Soyisim - 905551234567" → "905551234567"
             List<String> cleanedNumbers = request.getPhoneNumbers().stream()
                     .map(entry -> {
                         if (entry.contains(" - ")) {
-                            return entry.substring(entry.lastIndexOf(" - ") + 3).trim();
+                            return entry.substring(
+                                    entry.lastIndexOf(" - ") + 3).trim();
                         }
                         return entry.trim();
                     })
@@ -51,14 +58,21 @@ public class SendController {
                 }
             }
 
+            List<String> personalizedMessages =
+                    request.getPersonalizedMessages() != null
+                            ? request.getPersonalizedMessages()
+                            : List.of();
+
             sendingService.startSendingProcess(
                     session.getSessionId(),
                     request.getSessionId(),
-                    cleanedNumbers,       // temizlenmiş numaralar
+                    cleanedNumbers,
                     request.getMessage(),
                     request.getMinDelay(),
                     request.getMaxDelay(),
-                    mediaUrls
+                    mediaUrls,
+                    personalizedMessages,
+                    request.isPersonalized()  // Lombok bunu otomatik üretiyor ✅
             );
 
             return ResponseEntity.ok(Map.of(
