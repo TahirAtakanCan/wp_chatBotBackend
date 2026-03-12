@@ -1,4 +1,3 @@
-
 package com.ihh.wpBot.controller;
 
 import com.ihh.wpBot.model.MediaRequest;
@@ -10,10 +9,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/send")
@@ -27,43 +26,50 @@ public class SendController {
         this.sendingService = sendingService;
     }
 
-    // startSending metodunun içini şu şekilde değiştir:
     @PostMapping("/start")
     public ResponseEntity<?> startSending(@RequestBody SendRequest request) {
         try {
-            SendSession session = sendingService.createSession(request.getPhoneNumbers().size());
-            
-            // request.getMedia() üzerinden gelen URL'leri alıyoruz
+            // "İsim Soyisim - 905551234567" → "905551234567"
+            List<String> cleanedNumbers = request.getPhoneNumbers().stream()
+                    .map(entry -> {
+                        if (entry.contains(" - ")) {
+                            return entry.substring(entry.lastIndexOf(" - ") + 3).trim();
+                        }
+                        return entry.trim();
+                    })
+                    .filter(n -> !n.isBlank())
+                    .collect(Collectors.toList());
+
+            SendSession session = sendingService.createSession(cleanedNumbers.size());
+
             List<String> mediaUrls = new ArrayList<>();
-            
             if (request.getMedia() != null && !request.getMedia().isEmpty()) {
                 for (MediaRequest m : request.getMedia()) {
-                    // Node.js ve Java aynı makinede! Güvenlik duvarı engeline takılmamak için 
-                    // Dış IP'yi "localhost" olarak değiştirip Node.js'e öyle veriyoruz.
-                    String safeUrl = m.getUrl().replace("94.130.231.165", "localhost");
+                    String safeUrl = m.getUrl()
+                            .replace("94.130.231.165", "localhost");
                     mediaUrls.add(safeUrl);
                 }
             }
 
-            // MessageSendingService'e mediaUrls ve whatsappSessionId parametresini yolluyoruz
             sendingService.startSendingProcess(
-                    session.getSessionId(), 
+                    session.getSessionId(),
                     request.getSessionId(),
-                    request.getPhoneNumbers(), 
-                    request.getMessage(), 
-                    request.getMinDelay(), 
-                    request.getMaxDelay(), 
-                    mediaUrls 
+                    cleanedNumbers,       // temizlenmiş numaralar
+                    request.getMessage(),
+                    request.getMinDelay(),
+                    request.getMaxDelay(),
+                    mediaUrls
             );
 
             return ResponseEntity.ok(Map.of(
-                    "sessionId", session.getSessionId(),
-                    "totalNumbers", request.getPhoneNumbers().size(),
-                    "status", session.getStatus().toString()
+                    "sessionId",    session.getSessionId(),
+                    "totalNumbers", cleanedNumbers.size(),
+                    "status",       session.getStatus().toString()
             ));
 
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body("Hatalı istek: " + e.getMessage());
+            return ResponseEntity.badRequest()
+                    .body("Hatalı istek: " + e.getMessage());
         }
     }
 
@@ -78,7 +84,7 @@ public class SendController {
         SendSession session = sendingService.getSession(sessionId);
         return ResponseEntity.ok(Map.of(
                 "sessionId", session.getSessionId(),
-                "status", session.getStatus().toString()
+                "status",    session.getStatus().toString()
         ));
     }
 }
