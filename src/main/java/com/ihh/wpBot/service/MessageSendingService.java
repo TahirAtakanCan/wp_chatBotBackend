@@ -72,7 +72,6 @@ public class MessageSendingService {
                 String phone = phoneNumbers.get(i);
                 session.setCurrentNumber(phone);
 
-                // Kişiselleştirilmiş mesajı belirle
                 String finalMessage = message;
                 if (isPersonalized
                         && personalizedMessages != null
@@ -96,13 +95,28 @@ public class MessageSendingService {
                             (double) session.getSentCount() / session.getTotalNumbers());
                 }
 
-                if (i < phoneNumbers.size() - 1
-                        && session.getStatus() != SendStatus.PAUSED) {
-                    int delaySeconds =
-                            random.nextInt((maxDelay - minDelay) + 1) + minDelay;
-                    session.addLog(getFormattedTime()
-                            + " [BEKLE] " + delaySeconds + " saniye bekleniyor...");
-                    Thread.sleep(delaySeconds * 1000L);
+                // ☕ ANTİ-SPAM: KAHVE MOLASI VE DİNAMİK BEKLEME
+                if (session.getStatus() != SendStatus.PAUSED) {
+                    
+                    // Her 20 mesajda bir 10 dakikalık mola ver
+                    if (session.getSentCount() % 20 == 0 && i < phoneNumbers.size() - 1) {
+                        int breakMinutes = 10;
+                        session.addLog(getFormattedTime()
+                                + " [MOLA] Anti-Spam devrede! 20 mesaja ulaşıldı. Sisteme " + breakMinutes + " dakikalık insani dinlenme molası verdiriliyor...");
+                        
+                        Thread.sleep(breakMinutes * 60 * 1000L); // Dakikayı milisaniyeye çevir
+                        
+                        session.addLog(getFormattedTime()
+                                + " [MOLA BİTTİ] Dinlenme tamamlandı, gönderime devam ediliyor.");
+                    } 
+                    // Normal mesaj arası bekleme süresi
+                    else if (i < phoneNumbers.size() - 1) {
+                        int delaySeconds =
+                                random.nextInt((maxDelay - minDelay) + 1) + minDelay;
+                        session.addLog(getFormattedTime()
+                                + " [BEKLE] " + delaySeconds + " saniye bekleniyor...");
+                        Thread.sleep(delaySeconds * 1000L);
+                    }
                 }
             }
 
