@@ -3,7 +3,6 @@ package com.ihh.wpBot.controller;
 import com.ihh.wpBot.model.Role;
 import com.ihh.wpBot.model.User;
 import com.ihh.wpBot.service.UserService;
-import com.ihh.wpBot.service.WhatsAppService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -19,11 +18,9 @@ import java.util.stream.Collectors;
 public class UserController {
 
     private final UserService userService;
-    private final WhatsAppService whatsAppService;
 
-    public UserController(UserService userService, WhatsAppService whatsAppService) {
+    public UserController(UserService userService) {
         this.userService = userService;
-        this.whatsAppService = whatsAppService;
     }
 
     @GetMapping
@@ -45,11 +42,8 @@ public class UserController {
             User user = userService.createUser(username, password, role, sessionId);
 
             if (sessionId != null && !sessionId.isBlank()) {
-                try {
-                    whatsAppService.createSession(sessionId);
-                } catch (Exception ex) {
-                    // Session oluşturulamazsa kullanıcı yine de kaydedilsin
-                }
+                // Meta API kullanıldığı için Node.js üzerinden WhatsApp session oluşturmaya gerek yok
+                System.out.println("Meta API modu devrede, yeni oluşturulan User için harici session tetiklenmedi.");
             }
 
             return ResponseEntity.ok(toResponse(user));

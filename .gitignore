@@ -37,3 +37,7 @@ uploads/
 
 # H2 veritabanı dosyaları
 data/
+
+# Canlı Veri / Hassas Token Konfigürasyonları
+application-prod.properties
+*prod.properties

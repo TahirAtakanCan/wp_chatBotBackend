@@ -10,7 +10,6 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -19,7 +18,6 @@ public class MessageSendingService {
 
     private final Map<String, SendSession> activeSessions = new ConcurrentHashMap<>();
     private final WhatsAppService whatsAppService;
-    private final Random random = new Random();
 
     @Autowired
     public MessageSendingService(WhatsAppService whatsAppService) {
@@ -39,6 +37,10 @@ public class MessageSendingService {
         return activeSessions.getOrDefault(sessionId, new SendSession());
     }
 
+    public SendSession getActiveSession(String sessionId) {
+        return activeSessions.get(sessionId);
+    }
+
     public void stopSession(String sessionId) {
         SendSession session = activeSessions.get(sessionId);
         if (session != null && session.getStatus() == SendStatus.SENDING) {
@@ -52,7 +54,7 @@ public class MessageSendingService {
             String sessionId,
             String whatsappSessionId,
             List<String> phoneNumbers,
-            String message,
+            String templateName,
             int minDelay,
             int maxDelay,
             List<String> mediaPaths,
@@ -62,8 +64,47 @@ public class MessageSendingService {
         SendSession session = activeSessions.get(sessionId);
         if (session == null) return;
 
+        session.setTotalNumbers(phoneNumbers.size());
         session.setStatus(SendStatus.SENDING);
-        session.addLog(getFormattedTime() + " [SİSTEM] Node.js mikroservisine bağlanılıyor...");
+        session.addLog(getFormattedTime() + " [SİSTEM] Meta API'ye bağlanılıyor...");
+
+        runSendingLoop(session, phoneNumbers, templateName, mediaPaths);
+    }
+
+    @Async
+    public void resumeSession(
+            String sessionId,
+            String whatsappSessionId,
+            List<String> phoneNumbers,
+            String templateName,
+            List<String> mediaPaths,
+            boolean isPersonalized
+    ) {
+        SendSession session = activeSessions.get(sessionId);
+        if (session == null) {
+            throw new IllegalStateException("Session bulunamadı. Uygulama yeniden başladıysa oturum bellekte yoktur.");
+        }
+        if (session.getStatus() != SendStatus.RATE_LIMITED) {
+            throw new IllegalStateException("Session sadece RATE_LIMITED durumunda devam ettirilebilir.");
+        }
+        if (phoneNumbers == null || phoneNumbers.isEmpty()) {
+            throw new IllegalArgumentException("phoneNumbers boş olamaz.");
+        }
+
+        session.setTotalNumbers(phoneNumbers.size());
+        session.setStatus(SendStatus.SENDING);
+        session.addLog(getFormattedTime()
+                + " [SİSTEM] RATE_LIMITED oturumu kaldığı yerden devam ettiriliyor...");
+
+        runSendingLoop(session, phoneNumbers, templateName, mediaPaths);
+    }
+
+    private void runSendingLoop(
+            SendSession session,
+            List<String> phoneNumbers,
+            String templateName,
+            List<String> mediaPaths
+    ) {
 
         try {
             for (int i = session.getSentCount(); i < phoneNumbers.size(); i++) {
@@ -71,57 +112,39 @@ public class MessageSendingService {
 
                 String phone = phoneNumbers.get(i);
                 session.setCurrentNumber(phone);
-
-                String finalMessage = message;
-                if (isPersonalized
-                        && personalizedMessages != null
-                        && i < personalizedMessages.size()) {
-                    finalMessage = personalizedMessages.get(i);
-                }
+                boolean shouldIncrement = true;
 
                 try {
-                    whatsAppService.sendMessage(
-                            whatsappSessionId, phone, finalMessage, mediaPaths);
-                    String medyaLog = mediaPaths.isEmpty() ? "" : " (Medya ile)";
-                    session.addLog(getFormattedTime()
-                            + " [GÖNDER] " + phone
-                            + " numarasına gönderildi" + medyaLog + ". ✔");
+                    if (mediaPaths != null && !mediaPaths.isEmpty()) {
+                        // Template header image kullanan Meta mesajı
+                        whatsAppService.sendImageTemplateMessage(
+                                phone, templateName, "tr", mediaPaths.get(0));
+                    } else {
+                        whatsAppService.sendTemplateMessage(phone, templateName, "tr");
+                    }
+                    session.addLog(getFormattedTime() + " [GÖNDER] Mesaj Meta API'ye iletildi. ✔");
                 } catch (Exception e) {
-                    session.addLog(getFormattedTime()
-                            + " [HATA] " + phone + " - " + e.getMessage());
+                    String errorMessage = e.getMessage() != null ? e.getMessage() : "Bilinmeyen hata";
+                    if (errorMessage.contains("HTTP 429")) {
+                        session.setStatus(SendStatus.RATE_LIMITED);
+                        session.addLog(getFormattedTime() + " [RATE LIMIT] Meta API 429 döndü. Gönderim durduruldu.");
+                        shouldIncrement = false;
+                        break;
+                    }
+                    session.addLog(getFormattedTime() + " [HATA] " + phone + " - " + errorMessage);
                 } finally {
-                    session.setSentCount(session.getSentCount() + 1);
-                    session.setProgress(
-                            (double) session.getSentCount() / session.getTotalNumbers());
-                }
-
-                // ☕ ANTİ-SPAM: KAHVE MOLASI VE DİNAMİK BEKLEME
-                if (session.getStatus() != SendStatus.PAUSED) {
-                    
-                    // Her 20 mesajda bir 10 dakikalık mola ver
-                    if (session.getSentCount() % 20 == 0 && i < phoneNumbers.size() - 1) {
-                        int breakMinutes = 10;
-                        session.addLog(getFormattedTime()
-                                + " [MOLA] Anti-Spam devrede! 20 mesaja ulaşıldı. Sisteme " + breakMinutes + " dakikalık insani dinlenme molası verdiriliyor...");
-                        
-                        Thread.sleep(breakMinutes * 60 * 1000L); // Dakikayı milisaniyeye çevir
-                        
-                        session.addLog(getFormattedTime()
-                                + " [MOLA BİTTİ] Dinlenme tamamlandı, gönderime devam ediliyor.");
-                    } 
-                    // Normal mesaj arası bekleme süresi
-                    else if (i < phoneNumbers.size() - 1) {
-                        int delaySeconds =
-                                random.nextInt((maxDelay - minDelay) + 1) + minDelay;
-                        session.addLog(getFormattedTime()
-                                + " [BEKLE] " + delaySeconds + " saniye bekleniyor...");
-                        Thread.sleep(delaySeconds * 1000L);
+                    if (shouldIncrement) {
+                        session.setSentCount(session.getSentCount() + 1);
+                        session.setProgress(
+                                (double) session.getSentCount() / session.getTotalNumbers());
                     }
                 }
             }
 
-            if (session.getStatus() != SendStatus.PAUSED) {
+            if (session.getStatus() != SendStatus.PAUSED
+                    && session.getStatus() != SendStatus.RATE_LIMITED) {
                 session.setStatus(SendStatus.COMPLETED);
+                session.setProgress(1.0);
                 session.addLog(getFormattedTime()
                         + " [SİSTEM] Tüm gönderimler tamamlandı.");
             }

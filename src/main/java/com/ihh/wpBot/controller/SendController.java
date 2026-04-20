@@ -1,8 +1,10 @@
 package com.ihh.wpBot.controller;
 
 import com.ihh.wpBot.model.MediaRequest;
+import com.ihh.wpBot.model.ResumeSendRequest;
 import com.ihh.wpBot.model.SendRequest;
 import com.ihh.wpBot.model.SendSession;
+import com.ihh.wpBot.model.SendStatus;
 import com.ihh.wpBot.service.MessageSendingService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -100,5 +102,62 @@ public class SendController {
                 "sessionId", session.getSessionId(),
                 "status",    session.getStatus().toString()
         ));
+    }
+
+    @PostMapping("/resume/{sessionId}")
+    public ResponseEntity<?> resumeSending(
+            @PathVariable String sessionId,
+            @RequestBody ResumeSendRequest request) {
+        try {
+            SendSession session = sendingService.getActiveSession(sessionId);
+            if (session == null) {
+                return ResponseEntity.badRequest().body(Map.of(
+                        "error", "Session bellekte bulunamadı. Uygulama yeniden başladıysa oturum temizlenmiş olabilir."
+                ));
+            }
+
+            if (session.getStatus() != SendStatus.RATE_LIMITED) {
+                return ResponseEntity.badRequest().body(Map.of(
+                        "error", "Resume sadece RATE_LIMITED durumundaki session için kullanılabilir.",
+                        "currentStatus", session.getStatus().toString()
+                ));
+            }
+
+            List<String> cleanedNumbers = request.getPhoneNumbers().stream()
+                    .map(entry -> {
+                        if (entry.contains(" - ")) {
+                            return entry.substring(entry.lastIndexOf(" - ") + 3).trim();
+                        }
+                        return entry.trim();
+                    })
+                    .filter(n -> !n.isBlank())
+                    .collect(Collectors.toList());
+
+            List<String> mediaPaths = request.getMediaPaths() != null
+                    ? request.getMediaPaths().stream()
+                            .map(url -> url.replace("94.130.231.165", "localhost"))
+                            .collect(Collectors.toList())
+                    : List.of();
+
+            sendingService.resumeSession(
+                    sessionId,
+                    request.getWhatsappSessionId(),
+                    cleanedNumbers,
+                    request.getTemplateName(),
+                    mediaPaths,
+                    request.isPersonalized()
+            );
+
+            SendSession updated = sendingService.getSession(sessionId);
+            return ResponseEntity.ok(Map.of(
+                    "sessionId", updated.getSessionId(),
+                    "status", updated.getStatus().toString(),
+                    "sentCount", updated.getSentCount(),
+                    "totalNumbers", updated.getTotalNumbers(),
+                    "message", "Session kaldığı yerden devam ettirildi."
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
     }
 }

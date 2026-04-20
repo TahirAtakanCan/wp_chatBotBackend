@@ -25,27 +25,19 @@ public class SessionController {
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/session/create")
     public ResponseEntity<Map<String, Object>> createSession(@RequestBody SessionRequest request) {
-        try {
-            Map<String, Object> result = whatsAppService.createSession(request.getSessionId());
-            return ResponseEntity.ok(result);
-        } catch (Exception e) {
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", "Session oluşturulamadı: " + e.getMessage());
-            return ResponseEntity.status(503).body(error);
-        }
+        Map<String, Object> result = new HashMap<>();
+        result.put("message", "Meta API kullanılıyor. Harici session kurulumu artık gereksizdir.");
+        result.put("status", "SUCCESS");
+        return ResponseEntity.ok(result);
     }
 
     @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping("/session/{sessionId}")
     public ResponseEntity<Map<String, Object>> deleteSession(@PathVariable String sessionId) {
-        try {
-            Map<String, Object> result = whatsAppService.deleteSession(sessionId);
-            return ResponseEntity.ok(result);
-        } catch (Exception e) {
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", "Session silinemedi: " + e.getMessage());
-            return ResponseEntity.status(503).body(error);
-        }
+        Map<String, Object> result = new HashMap<>();
+        result.put("message", "Meta API kullanılıyor. Oturum silme işlemine gerek duyulmaz.");
+        result.put("status", "DELETED");
+        return ResponseEntity.ok(result);
     }
 
     @PreAuthorize("isAuthenticated()")
@@ -65,7 +57,9 @@ public class SessionController {
                 return ResponseEntity.status(403).body(error);
             }
 
-            Map<String, Object> result = whatsAppService.getSessionStatus(sessionId);
+            Map<String, Object> result = new HashMap<>();
+            result.put("status", "CONNECTED");
+            result.put("message", "Meta API ile bağlı.");
             return ResponseEntity.ok(result);
         } catch (Exception e) {
             Map<String, Object> error = new HashMap<>();
@@ -77,13 +71,8 @@ public class SessionController {
     @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/sessions")
     public ResponseEntity<Map<String, Object>> getAllSessions() {
-        try {
-            Map<String, Object> result = whatsAppService.getAllSessions();
-            return ResponseEntity.ok(result);
-        } catch (Exception e) {
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", "Session listesi alınamadı: " + e.getMessage());
-            return ResponseEntity.status(503).body(error);
-        }
+        Map<String, Object> result = new HashMap<>();
+        result.put("message", "Meta API üzerinde çalışılmaktadır, bağımsız oturumlar bulunmamaktadır.");
+        return ResponseEntity.ok(result);
     }
 }
