@@ -1,10 +1,8 @@
 package com.ihh.wpBot.service;
 
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpStatusCodeException;
@@ -24,9 +22,18 @@ public class WhatsAppService {
     @Value("${meta.access.token}")
     private String accessToken;
 
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final RestTemplate restTemplate;
+
+    public WhatsAppService(RestTemplate restTemplate) {
+        this.restTemplate = restTemplate;
+    }
 
     public void sendTemplateMessage(String toPhoneNumber, String templateName, String languageCode) {
+        sendTemplateMessage(toPhoneNumber, templateName, languageCode, null);
+    }
+
+    public void sendTemplateMessage(String toPhoneNumber, String templateName, String languageCode,
+                                    List<String> bodyParameters) {
         Map<String, Object> body = new HashMap<>();
         body.put("messaging_product", "whatsapp");
         body.put("to", toPhoneNumber);
@@ -39,6 +46,25 @@ public class WhatsAppService {
         languageMap.put("code", languageCode);
 
         templateMap.put("language", languageMap);
+
+        if (bodyParameters != null && !bodyParameters.isEmpty()) {
+            List<Map<String, Object>> bodyParams = new ArrayList<>();
+            for (String parameter : bodyParameters) {
+                Map<String, Object> textParameter = new HashMap<>();
+                textParameter.put("type", "text");
+                textParameter.put("text", parameter);
+                bodyParams.add(textParameter);
+            }
+
+            Map<String, Object> bodyComponent = new HashMap<>();
+            bodyComponent.put("type", "body");
+            bodyComponent.put("parameters", bodyParams);
+
+            List<Map<String, Object>> components = new ArrayList<>();
+            components.add(bodyComponent);
+            templateMap.put("components", components);
+        }
+
         body.put("template", templateMap);
 
         Map<String, Object> response = postMessageRequest(body);
@@ -47,6 +73,12 @@ public class WhatsAppService {
 
     public void sendImageTemplateMessage(String toPhoneNumber, String templateName,
                                          String languageCode, String imageUrl) {
+        sendImageTemplateMessage(toPhoneNumber, templateName, languageCode, imageUrl, null);
+    }
+
+    public void sendImageTemplateMessage(String toPhoneNumber, String templateName,
+                                         String languageCode, String imageUrl,
+                                         List<String> bodyParameters) {
         Map<String, Object> body = new HashMap<>();
         body.put("messaging_product", "whatsapp");
         body.put("to", toPhoneNumber);
@@ -75,6 +107,22 @@ public class WhatsAppService {
 
         ArrayList<Map<String, Object>> components = new ArrayList<>();
         components.add(headerComponent);
+
+        if (bodyParameters != null && !bodyParameters.isEmpty()) {
+            List<Map<String, Object>> bodyParams = new ArrayList<>();
+            for (String parameter : bodyParameters) {
+                Map<String, Object> textParameter = new HashMap<>();
+                textParameter.put("type", "text");
+                textParameter.put("text", parameter);
+                bodyParams.add(textParameter);
+            }
+
+            Map<String, Object> bodyComponent = new HashMap<>();
+            bodyComponent.put("type", "body");
+            bodyComponent.put("parameters", bodyParams);
+            components.add(bodyComponent);
+        }
+
         templateMap.put("components", components);
 
         body.put("template", templateMap);
@@ -83,6 +131,7 @@ public class WhatsAppService {
         System.out.println("Meta API Image Template Response: " + response);
     }
 
+    @SuppressWarnings("unchecked")
     private Map<String, Object> postMessageRequest(Map<String, Object> body) {
         String url = "https://graph.facebook.com/v18.0/" + phoneId + "/messages";
 
@@ -93,12 +142,7 @@ public class WhatsAppService {
         HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
 
         try {
-            return restTemplate.exchange(
-                    url,
-                    HttpMethod.POST,
-                    request,
-                    new ParameterizedTypeReference<Map<String, Object>>() {}
-            ).getBody();
+            return (Map<String, Object>) restTemplate.postForObject(url, request, Map.class);
         } catch (HttpStatusCodeException e) {
             int statusCode = e.getStatusCode().value();
             String responseBody = e.getResponseBodyAsString();

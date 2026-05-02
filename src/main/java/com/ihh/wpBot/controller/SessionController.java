@@ -2,7 +2,6 @@ package com.ihh.wpBot.controller;
 
 import com.ihh.wpBot.config.JwtUtil;
 import com.ihh.wpBot.model.SessionRequest;
-import com.ihh.wpBot.service.WhatsAppService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -14,11 +13,9 @@ import java.util.Map;
 @RequestMapping("/api")
 public class SessionController {
 
-    private final WhatsAppService whatsAppService;
     private final JwtUtil jwtUtil;
 
-    public SessionController(WhatsAppService whatsAppService, JwtUtil jwtUtil) {
-        this.whatsAppService = whatsAppService;
+    public SessionController(JwtUtil jwtUtil) {
         this.jwtUtil = jwtUtil;
     }
 

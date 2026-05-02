@@ -68,7 +68,7 @@ public class MessageSendingService {
         session.setStatus(SendStatus.SENDING);
         session.addLog(getFormattedTime() + " [SİSTEM] Meta API'ye bağlanılıyor...");
 
-        runSendingLoop(session, phoneNumbers, templateName, mediaPaths);
+        runSendingLoop(session, phoneNumbers, templateName, mediaPaths, personalizedMessages);
     }
 
     @Async
@@ -96,14 +96,15 @@ public class MessageSendingService {
         session.addLog(getFormattedTime()
                 + " [SİSTEM] RATE_LIMITED oturumu kaldığı yerden devam ettiriliyor...");
 
-        runSendingLoop(session, phoneNumbers, templateName, mediaPaths);
+        runSendingLoop(session, phoneNumbers, templateName, mediaPaths, null);
     }
 
     private void runSendingLoop(
             SendSession session,
             List<String> phoneNumbers,
             String templateName,
-            List<String> mediaPaths
+            List<String> mediaPaths,
+            List<String> personalizedMessages
     ) {
 
         try {
@@ -113,14 +114,15 @@ public class MessageSendingService {
                 String phone = phoneNumbers.get(i);
                 session.setCurrentNumber(phone);
                 boolean shouldIncrement = true;
+                List<String> bodyParameters = buildBodyParameters(templateName, personalizedMessages, i);
 
                 try {
                     if (mediaPaths != null && !mediaPaths.isEmpty()) {
                         // Template header image kullanan Meta mesajı
                         whatsAppService.sendImageTemplateMessage(
-                                phone, templateName, "tr", mediaPaths.get(0));
+                                phone, templateName, "tr", mediaPaths.get(0), bodyParameters);
                     } else {
-                        whatsAppService.sendTemplateMessage(phone, templateName, "tr");
+                        whatsAppService.sendTemplateMessage(phone, templateName, "tr", bodyParameters);
                     }
                     session.addLog(getFormattedTime() + " [GÖNDER] Mesaj Meta API'ye iletildi. ✔");
                 } catch (Exception e) {
@@ -154,6 +156,29 @@ public class MessageSendingService {
             session.addLog(getFormattedTime()
                     + " [KRİTİK HATA] Gönderim çöktü: " + e.getMessage());
         }
+    }
+
+    private List<String> buildBodyParameters(String templateName,
+                                             List<String> personalizedMessages,
+                                             int index) {
+        Map<String, List<String>> templateDefaults = Map.of(
+                "bagis_tesekkur", List.of("Ahmet Yılmaz", "500"),
+                "kurban_kardeslik_cagri", List.of("11.500"),
+                "test_basit", List.of()
+        );
+
+        if (personalizedMessages != null && !personalizedMessages.isEmpty() && index < personalizedMessages.size()) {
+            String msg = personalizedMessages.get(index);
+            if (msg != null && !msg.isBlank()) {
+                return List.of(msg);
+            }
+        }
+
+        if (templateDefaults.containsKey(templateName)) {
+            return templateDefaults.get(templateName);
+        }
+
+        return List.of();
     }
 
     private String getFormattedTime() {

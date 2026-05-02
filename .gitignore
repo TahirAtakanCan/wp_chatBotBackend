@@ -41,3 +41,4 @@ data/
 # Canlı Veri / Hassas Token Konfigürasyonları
 application-prod.properties
 *prod.properties
+src/main/resources/application-prod.properties
