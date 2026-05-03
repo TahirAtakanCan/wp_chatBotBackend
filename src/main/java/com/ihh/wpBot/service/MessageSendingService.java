@@ -3,6 +3,7 @@ package com.ihh.wpBot.service;
 import com.ihh.wpBot.model.SendSession;
 import com.ihh.wpBot.model.SendStatus;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -18,6 +19,9 @@ public class MessageSendingService {
 
     private final Map<String, SendSession> activeSessions = new ConcurrentHashMap<>();
     private final WhatsAppService whatsAppService;
+
+    @Value("${app.public.url}")
+    private String publicUrl;
 
     @Autowired
     public MessageSendingService(WhatsAppService whatsAppService) {
@@ -118,9 +122,13 @@ public class MessageSendingService {
 
                 try {
                     if (mediaPaths != null && !mediaPaths.isEmpty()) {
-                        // Template header image kullanan Meta mesajı
+                        String filename = extractFilename(mediaPaths.get(0));
+                        String base = publicUrl.endsWith("/")
+                                ? publicUrl.substring(0, publicUrl.length() - 1)
+                                : publicUrl;
+                        String imageUrl = base + "/api/media/" + filename;
                         whatsAppService.sendImageTemplateMessage(
-                                phone, templateName, "tr", mediaPaths.get(0), bodyParameters);
+                                phone, templateName, "tr", imageUrl, bodyParameters);
                     } else {
                         whatsAppService.sendTemplateMessage(phone, templateName, "tr", bodyParameters);
                     }
@@ -156,6 +164,23 @@ public class MessageSendingService {
             session.addLog(getFormattedTime()
                     + " [KRİTİK HATA] Gönderim çöktü: " + e.getMessage());
         }
+    }
+
+    private String extractFilename(String pathOrUrl) {
+        if (pathOrUrl == null || pathOrUrl.isBlank()) {
+            return "";
+        }
+        String s = pathOrUrl.trim();
+        int q = s.indexOf('?');
+        if (q >= 0) {
+            s = s.substring(0, q);
+        }
+        int apiMedia = s.indexOf("/api/media/");
+        if (apiMedia >= 0) {
+            return s.substring(apiMedia + "/api/media/".length());
+        }
+        int lastSlash = s.lastIndexOf('/');
+        return lastSlash >= 0 ? s.substring(lastSlash + 1) : s;
     }
 
     private List<String> buildBodyParameters(String templateName,
