@@ -132,8 +132,9 @@ public class WebhookEventService {
         inbound.setMessageType(resolveMessageType(messageNode.path("type").asText(null)));
         String content = resolveInboundContent(messageNode);
         inbound.setContent(content);
-        inbound.setWaMessageId(messageNode.path("id").asText(null));
-        inbound.setSentAt(resolveMessageSentAt(messageNode, now));
+        String waMessageId = messageNode.path("id").asText(null);
+        inbound.setWaMessageId(waMessageId);
+        inbound.setSentAt(resolveMessageSentAt(messageNode, now, waMessageId));
         inbound.setStatus(MessageStatus.DELIVERED);
 
         conversation.setLastMessageAt(now);
@@ -207,17 +208,35 @@ public class WebhookEventService {
         return "[medya]";
     }
 
-    private LocalDateTime resolveMessageSentAt(JsonNode messageNode, LocalDateTime fallback) {
-        String ts = messageNode.path("timestamp").asText(null);
-        if (ts == null || ts.isBlank()) {
+    private static final LocalDateTime MIN_REASONABLE_TIMESTAMP = LocalDateTime.of(2020, 1, 1, 0, 0);
+    private static final LocalDateTime MAX_REASONABLE_TIMESTAMP = LocalDateTime.of(2030, 1, 1, 0, 0);
+
+    private LocalDateTime resolveMessageSentAt(JsonNode messageNode, LocalDateTime fallback, String waMessageId) {
+        String timestampStr = messageNode.path("timestamp").asText(null);
+        if (timestampStr == null || timestampStr.isBlank()) {
+            log.warn("Meta timestamp missing for waMessageId={}, using current time as fallback", waMessageId);
             return fallback;
         }
+
+        final long epochSeconds;
         try {
-            long epochSeconds = Long.parseLong(ts);
-            return Instant.ofEpochSecond(epochSeconds).atZone(ZoneId.systemDefault()).toLocalDateTime();
-        } catch (Exception e) {
+            epochSeconds = Long.parseLong(timestampStr);
+        } catch (NumberFormatException e) {
+            log.error("Failed to parse Meta timestamp '{}' for waMessageId={}, using current time", timestampStr, waMessageId);
             return fallback;
         }
+
+        LocalDateTime sentAt = LocalDateTime.ofInstant(
+                Instant.ofEpochSecond(epochSeconds),
+                ZoneId.systemDefault()
+        );
+
+        if (sentAt.isBefore(MIN_REASONABLE_TIMESTAMP) || !sentAt.isBefore(MAX_REASONABLE_TIMESTAMP)) {
+            log.warn("Suspicious timestamp from Meta: {}, falling back to now (waMessageId={})", sentAt, waMessageId);
+            return fallback;
+        }
+
+        return sentAt;
     }
 
     private MessageStatus mapMessageStatus(String status) {
