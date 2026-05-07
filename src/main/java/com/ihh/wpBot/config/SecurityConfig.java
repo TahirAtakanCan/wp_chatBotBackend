@@ -38,6 +38,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/media/**").permitAll()
                         .requestMatchers("/api/webhook").permitAll()
                         .requestMatchers("/api/health").permitAll()
+                        .requestMatchers("/api/conversations/**").authenticated()
                         .requestMatchers("/api/templates/**").authenticated()
                         .requestMatchers("/api/contacts/**").authenticated()
                         .requestMatchers("/h2-console/**").permitAll()
