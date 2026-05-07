@@ -1,5 +1,7 @@
 package com.ihh.wpBot.service;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -16,6 +18,8 @@ import java.util.Map;
 @Service
 public class WhatsAppService {
 
+    private static final Logger log = LoggerFactory.getLogger(WhatsAppService.class);
+
     @Value("${meta.phone.id}")
     private String phoneId;
 
@@ -26,6 +30,39 @@ public class WhatsAppService {
 
     public WhatsAppService(RestTemplate restTemplate) {
         this.restTemplate = restTemplate;
+    }
+
+    public String sendTextMessage(String toPhoneNumber, String text) {
+        String metaPhone = toPhoneNumber == null ? null : toPhoneNumber.trim();
+        if (metaPhone != null && metaPhone.startsWith("+")) {
+            metaPhone = metaPhone.substring(1);
+        }
+
+        log.info("Sending text message to {}", metaPhone);
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("messaging_product", "whatsapp");
+        body.put("to", metaPhone);
+        body.put("type", "text");
+
+        Map<String, Object> textBody = new HashMap<>();
+        textBody.put("body", text);
+        body.put("text", textBody);
+
+        Map<String, Object> response;
+        try {
+            response = postMessageRequest(body);
+        } catch (IllegalStateException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof HttpStatusCodeException httpEx && httpEx.getStatusCode().value() == 429) {
+                throw new IllegalStateException("RATE_LIMITED", e);
+            }
+            throw e;
+        }
+
+        String waMessageId = extractWaMessageId(response);
+        log.info("Text message sent, waMessageId={}", waMessageId);
+        return waMessageId;
     }
 
     public void sendTemplateMessage(String toPhoneNumber, String templateName, String languageCode) {
@@ -155,5 +192,25 @@ public class WhatsAppService {
 
             throw new IllegalStateException("Meta API isteği başarısız oldu. HTTP " + statusCode, e);
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private String extractWaMessageId(Map<String, Object> response) {
+        if (response == null) {
+            throw new IllegalStateException("Meta API response is null");
+        }
+        Object messagesObj = response.get("messages");
+        if (!(messagesObj instanceof List<?> messages) || messages.isEmpty()) {
+            throw new IllegalStateException("Meta API response missing messages[0].id");
+        }
+        Object first = messages.get(0);
+        if (!(first instanceof Map<?, ?> firstMap)) {
+            throw new IllegalStateException("Meta API response messages[0] is not an object");
+        }
+        Object idObj = ((Map<String, Object>) firstMap).get("id");
+        if (!(idObj instanceof String id) || id.isBlank()) {
+            throw new IllegalStateException("Meta API response missing messages[0].id");
+        }
+        return id;
     }
 }
