@@ -55,10 +55,13 @@ public class WebhookEventService {
 
         JsonNode messageNode = null;
         JsonNode statusNode = null;
+        String metaContactName = null;
 
         try {
             JsonNode root = objectMapper.readTree(payload);
             JsonNode valueNode = root.path("entry").path(0).path("changes").path(0).path("value");
+
+            metaContactName = safeExtractMetaContactName(valueNode);
 
             JsonNode statusesNode = valueNode.path("statuses");
             if (statusesNode.isArray() && statusesNode.size() > 0) {
@@ -90,7 +93,8 @@ public class WebhookEventService {
         if ("MESSAGE".equals(saved.getEventType()) && messageNode != null) {
             try {
                 JsonNode finalMessageNode = messageNode;
-                transactionTemplate.executeWithoutResult(status -> upsertConversationAndInboundMessage(finalMessageNode));
+                String finalMetaContactName = metaContactName;
+                transactionTemplate.executeWithoutResult(status -> upsertConversationAndInboundMessage(finalMessageNode, finalMetaContactName));
                 log.info("Conversation upserted. phone={}", normalizePhoneNumber(saved.getFromPhone()));
             } catch (Exception e) {
                 log.error("Conversation/Message write failed for MESSAGE event. waMessageId={}", saved.getWaMessageId(), e);
@@ -107,7 +111,7 @@ public class WebhookEventService {
         return saved;
     }
 
-    private void upsertConversationAndInboundMessage(JsonNode messageNode) {
+    private void upsertConversationAndInboundMessage(JsonNode messageNode, String metaContactName) {
         String fromPhoneRaw = messageNode.path("from").asText(null);
         String phoneNumber = normalizePhoneNumber(fromPhoneRaw);
         if (phoneNumber == null || phoneNumber.isBlank()) {
@@ -116,7 +120,10 @@ public class WebhookEventService {
 
         LocalDateTime now = LocalDateTime.now();
 
-        Conversation conversation = conversationRepository.findByPhoneNumber(phoneNumber).orElseGet(() -> {
+        var existingOpt = conversationRepository.findByPhoneNumber(phoneNumber);
+        boolean isNewConversation = existingOpt.isEmpty();
+
+        Conversation conversation = existingOpt.orElseGet(() -> {
             Conversation c = new Conversation();
             c.setPhoneNumber(phoneNumber);
             c.setStatus(ConversationStatus.OPEN);
@@ -125,6 +132,14 @@ public class WebhookEventService {
             c.setLastMessageAt(now);
             return c;
         });
+
+        if (!isBlank(metaContactName)) {
+            if (isNewConversation) {
+                conversation.setContactName(metaContactName);
+            } else if (isBlank(conversation.getContactName())) {
+                conversation.setContactName(metaContactName);
+            }
+        }
 
         Message inbound = new Message();
         inbound.setConversation(conversation);
@@ -148,6 +163,30 @@ public class WebhookEventService {
         Conversation savedConversation = conversationRepository.save(conversation);
         inbound.setConversation(savedConversation);
         messageRepository.save(inbound);
+    }
+
+    private String safeExtractMetaContactName(JsonNode valueNode) {
+        if (valueNode == null) {
+            return null;
+        }
+        JsonNode contactsNode = valueNode.path("contacts");
+        if (!contactsNode.isArray() || contactsNode.isEmpty()) {
+            return null;
+        }
+        JsonNode contact0 = contactsNode.get(0);
+        if (contact0 == null || contact0.isNull()) {
+            return null;
+        }
+        String name = contact0.path("profile").path("name").asText(null);
+        if (name == null) {
+            return null;
+        }
+        String trimmed = name.trim();
+        return trimmed.isBlank() ? null : trimmed;
+    }
+
+    private boolean isBlank(String s) {
+        return s == null || s.isBlank();
     }
 
     private void updateOutboundMessageStatus(JsonNode statusNode) {

@@ -25,6 +25,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -88,6 +89,9 @@ class WebhookEventServiceTest {
                   "entry": [{
                     "changes": [{
                       "value": {
+                        "contacts": [
+                          { "profile": { "name": "Atakan Can" }, "wa_id": "905071610354" }
+                        ],
                         "messages": [{
                           "from": "905071610354",
                           "id": "wamid.test_epoch",
@@ -148,6 +152,9 @@ class WebhookEventServiceTest {
                   "entry": [{
                     "changes": [{
                       "value": {
+                        "contacts": [
+                          { "profile": { "name": "Atakan Can" }, "wa_id": "905071610354" }
+                        ],
                         "messages": [{
                           "from": "905071610354",
                           "id": "wamid.test_missing_ts",
@@ -197,6 +204,9 @@ class WebhookEventServiceTest {
                   "entry": [{
                     "changes": [{
                       "value": {
+                        "contacts": [
+                          { "profile": { "name": "Atakan Can" }, "wa_id": "905071610354" }
+                        ],
                         "messages": [{
                           "from": "905071610354",
                           "id": "wamid.test_bad_ts",
@@ -221,6 +231,169 @@ class WebhookEventServiceTest {
         long diffSeconds = Math.abs(ChronoUnit.SECONDS.between(saved.getSentAt(), before));
         assertTrue(diffSeconds <= 5 || (!saved.getSentAt().isBefore(before.minusSeconds(5)) && !saved.getSentAt().isAfter(after.plusSeconds(5))),
                 "sentAt should fall back close to now for invalid timestamp");
+    }
+
+    @Test
+    void saveIncomingPayload_setsContactNameForNewConversation_fromMetaContactsProfileName() {
+        WebhookEventRepository webhookEventRepository = mock(WebhookEventRepository.class);
+        ConversationRepository conversationRepository = mock(ConversationRepository.class);
+        MessageRepository messageRepository = mock(MessageRepository.class);
+
+        when(webhookEventRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(conversationRepository.findByPhoneNumber(any())).thenReturn(Optional.empty());
+        when(conversationRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(messageRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        WebhookEventService service = new WebhookEventService(
+                webhookEventRepository,
+                new ObjectMapper(),
+                conversationRepository,
+                messageRepository,
+                NOOP_TX_MANAGER
+        );
+
+        String payload = """
+                {
+                  "entry": [{
+                    "changes": [{
+                      "value": {
+                        "contacts": [
+                          { "profile": { "name": "Atakan Can" }, "wa_id": "905071610354" }
+                        ],
+                        "messages": [{
+                          "from": "905071610354",
+                          "id": "wamid.test_contact_name_new",
+                          "type": "text",
+                          "text": { "body": "hello" }
+                        }]
+                      }
+                    }]
+                  }]
+                }
+                """;
+
+        service.saveIncomingPayload(payload);
+
+        ArgumentCaptor<Conversation> convCaptor = ArgumentCaptor.forClass(Conversation.class);
+        verify(conversationRepository, times(1)).save(convCaptor.capture());
+        Conversation saved = convCaptor.getValue();
+        assertEquals("Atakan Can", saved.getContactName());
+    }
+
+    @Test
+    void saveIncomingPayload_fillsContactNameIfExistingButBlank_doesNotOverrideIfAlreadySet() {
+        WebhookEventRepository webhookEventRepository = mock(WebhookEventRepository.class);
+        ConversationRepository conversationRepository = mock(ConversationRepository.class);
+        MessageRepository messageRepository = mock(MessageRepository.class);
+
+        when(webhookEventRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        Conversation existingBlank = new Conversation();
+        existingBlank.setId(10L);
+        existingBlank.setPhoneNumber("+905071610354");
+        existingBlank.setContactName("   ");
+        existingBlank.setStatus(ConversationStatus.OPEN);
+
+        when(conversationRepository.findByPhoneNumber(any()))
+                .thenReturn(Optional.of(existingBlank));
+        when(conversationRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(messageRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        WebhookEventService service = new WebhookEventService(
+                webhookEventRepository,
+                new ObjectMapper(),
+                conversationRepository,
+                messageRepository,
+                NOOP_TX_MANAGER
+        );
+
+        String payload = """
+                {
+                  "entry": [{
+                    "changes": [{
+                      "value": {
+                        "contacts": [
+                          { "profile": { "name": "Atakan Can" }, "wa_id": "905071610354" }
+                        ],
+                        "messages": [{
+                          "from": "905071610354",
+                          "id": "wamid.test_contact_name_existing_blank",
+                          "type": "text",
+                          "text": { "body": "hello" }
+                        }]
+                      }
+                    }]
+                  }]
+                }
+                """;
+
+        service.saveIncomingPayload(payload);
+
+        ArgumentCaptor<Conversation> convCaptor = ArgumentCaptor.forClass(Conversation.class);
+        verify(conversationRepository, times(1)).save(convCaptor.capture());
+        Conversation saved = convCaptor.getValue();
+        assertEquals("Atakan Can", saved.getContactName());
+
+        // Now simulate an existing conversation where contactName is already set; it should not be overridden.
+        Conversation existingSet = new Conversation();
+        existingSet.setId(11L);
+        existingSet.setPhoneNumber("+905071610354");
+        existingSet.setContactName("Manual Name");
+        existingSet.setStatus(ConversationStatus.OPEN);
+
+        when(conversationRepository.findByPhoneNumber(any()))
+                .thenReturn(Optional.of(existingSet));
+
+        service.saveIncomingPayload(payload);
+
+        ArgumentCaptor<Conversation> convCaptor2 = ArgumentCaptor.forClass(Conversation.class);
+        verify(conversationRepository, times(2)).save(convCaptor2.capture());
+        Conversation saved2 = convCaptor2.getAllValues().get(1);
+        assertEquals("Manual Name", saved2.getContactName());
+    }
+
+    @Test
+    void saveIncomingPayload_defensiveMissingContacts_doesNotSetContactName() {
+        WebhookEventRepository webhookEventRepository = mock(WebhookEventRepository.class);
+        ConversationRepository conversationRepository = mock(ConversationRepository.class);
+        MessageRepository messageRepository = mock(MessageRepository.class);
+
+        when(webhookEventRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(conversationRepository.findByPhoneNumber(any())).thenReturn(Optional.empty());
+        when(conversationRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(messageRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        WebhookEventService service = new WebhookEventService(
+                webhookEventRepository,
+                new ObjectMapper(),
+                conversationRepository,
+                messageRepository,
+                NOOP_TX_MANAGER
+        );
+
+        String payloadNoContacts = """
+                {
+                  "entry": [{
+                    "changes": [{
+                      "value": {
+                        "messages": [{
+                          "from": "905071610354",
+                          "id": "wamid.test_contact_name_missing_contacts",
+                          "type": "text",
+                          "text": { "body": "hello" }
+                        }]
+                      }
+                    }]
+                  }]
+                }
+                """;
+
+        service.saveIncomingPayload(payloadNoContacts);
+
+        ArgumentCaptor<Conversation> convCaptor = ArgumentCaptor.forClass(Conversation.class);
+        verify(conversationRepository, times(1)).save(convCaptor.capture());
+        Conversation saved = convCaptor.getValue();
+        assertNull(saved.getContactName());
     }
 }
 
