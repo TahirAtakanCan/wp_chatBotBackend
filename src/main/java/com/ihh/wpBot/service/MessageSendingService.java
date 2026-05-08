@@ -2,6 +2,8 @@ package com.ihh.wpBot.service;
 
 import com.ihh.wpBot.model.SendSession;
 import com.ihh.wpBot.model.SendStatus;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
@@ -16,6 +18,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class MessageSendingService {
+
+    private static final Logger log = LoggerFactory.getLogger(MessageSendingService.class);
 
     private final Map<String, SendSession> activeSessions = new ConcurrentHashMap<>();
     private final WhatsAppService whatsAppService;
@@ -188,22 +192,24 @@ public class MessageSendingService {
                                              int index) {
         Map<String, List<String>> templateDefaults = Map.of(
                 "bagis_tesekkur", List.of("Ahmet Yılmaz", "500"),
-                "kurban_kardeslik_cagri", List.of("11.500"),
+                "kurban_kardeslik_cagri", List.of(),
                 "test_basit", List.of()
         );
 
+        List<String> params = List.of();
         if (personalizedMessages != null && !personalizedMessages.isEmpty() && index < personalizedMessages.size()) {
             String msg = personalizedMessages.get(index);
             if (msg != null && !msg.isBlank()) {
-                return List.of(msg);
+                params = List.of(msg);
             }
         }
 
-        if (templateDefaults.containsKey(templateName)) {
-            return templateDefaults.get(templateName);
+        if (params.isEmpty() && templateDefaults.containsKey(templateName)) {
+            params = templateDefaults.get(templateName);
         }
 
-        return List.of();
+        log.info("Building body params for template={}, params={}", templateName, params);
+        return params;
     }
 
     private String getFormattedTime() {
