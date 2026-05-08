@@ -26,6 +26,45 @@ public class WhatsAppService {
     @Value("${meta.access.token}")
     private String accessToken;
 
+    @Value("${app.contact.formatted-name}")
+    private String contactFormattedName;
+
+    @Value("${app.contact.first-name}")
+    private String contactFirstName;
+
+    @Value("${app.contact.last-name}")
+    private String contactLastName;
+
+    @Value("${app.contact.org-company}")
+    private String contactOrgCompany;
+
+    @Value("${app.contact.org-department}")
+    private String contactOrgDepartment;
+
+    @Value("${app.contact.org-title}")
+    private String contactOrgTitle;
+
+    @Value("${app.contact.phone}")
+    private String contactPhone;
+
+    @Value("${app.contact.wa-id}")
+    private String contactWaId;
+
+    @Value("${app.contact.url}")
+    private String contactUrl;
+
+    @Value("${app.contact.city}")
+    private String contactCity;
+
+    @Value("${app.contact.state}")
+    private String contactState;
+
+    @Value("${app.contact.country}")
+    private String contactCountry;
+
+    @Value("${app.contact.country-code}")
+    private String contactCountryCode;
+
     private final RestTemplate restTemplate;
 
     public WhatsAppService(RestTemplate restTemplate) {
@@ -166,6 +205,70 @@ public class WhatsAppService {
 
         Map<String, Object> response = postMessageRequest(body);
         System.out.println("Meta API Image Template Response: " + response);
+    }
+
+    public String sendContactCard(String toPhoneNumber) {
+        String metaPhone = toPhoneNumber == null ? null : toPhoneNumber.trim();
+        if (metaPhone != null && metaPhone.startsWith("+")) {
+            metaPhone = metaPhone.substring(1);
+        }
+
+        log.info("Sending contact card to {}", metaPhone);
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("messaging_product", "whatsapp");
+        body.put("to", metaPhone);
+        body.put("type", "contacts");
+
+        Map<String, Object> contact = new HashMap<>();
+
+        Map<String, String> name = new HashMap<>();
+        name.put("formatted_name", contactFormattedName);
+        name.put("first_name", contactFirstName);
+        name.put("last_name", contactLastName);
+        contact.put("name", name);
+
+        Map<String, String> org = new HashMap<>();
+        org.put("company", contactOrgCompany);
+        org.put("department", contactOrgDepartment);
+        org.put("title", contactOrgTitle);
+        contact.put("org", org);
+
+        Map<String, String> phone = new HashMap<>();
+        phone.put("phone", contactPhone);
+        phone.put("wa_id", contactWaId);
+        phone.put("type", "WORK");
+        contact.put("phones", List.of(phone));
+
+        Map<String, String> url = new HashMap<>();
+        url.put("url", contactUrl);
+        url.put("type", "WORK");
+        contact.put("urls", List.of(url));
+
+        Map<String, String> address = new HashMap<>();
+        address.put("city", contactCity);
+        address.put("state", contactState);
+        address.put("country", contactCountry);
+        address.put("country_code", contactCountryCode);
+        address.put("type", "WORK");
+        contact.put("addresses", List.of(address));
+
+        body.put("contacts", List.of(contact));
+
+        Map<String, Object> response;
+        try {
+            response = postMessageRequest(body);
+        } catch (IllegalStateException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof HttpStatusCodeException httpEx && httpEx.getStatusCode().value() == 429) {
+                throw new IllegalStateException("RATE_LIMITED", e);
+            }
+            throw e;
+        }
+
+        String waMessageId = extractWaMessageId(response);
+        log.info("Contact card sent, waMessageId={}", waMessageId);
+        return waMessageId;
     }
 
     @SuppressWarnings("unchecked")

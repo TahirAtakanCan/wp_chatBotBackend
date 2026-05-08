@@ -133,6 +133,54 @@ public class ConversationController {
         return ResponseEntity.ok(MessageDto.from(savedMessage));
     }
 
+    @PostMapping("/{id}/send-contact-card")
+    @Transactional
+    public ResponseEntity<?> sendContactCard(@PathVariable Long id) {
+        Conversation conversation = conversationRepository.findById(id).orElse(null);
+        if (conversation == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        }
+
+        if (!conversation.isReplyWindowOpen()) {
+            return ResponseEntity.unprocessableEntity().body(
+                    new ErrorResponse(
+                            "REPLY_WINDOW_CLOSED",
+                            "24 saatlik müşteri penceresi kapanmış. Yalnızca onaylı template gönderebilirsiniz."
+                    )
+            );
+        }
+
+        String waMessageId;
+        try {
+            waMessageId = whatsAppService.sendContactCard(conversation.getPhoneNumber());
+        } catch (IllegalStateException e) {
+            if ("RATE_LIMITED".equals(e.getMessage())) {
+                return ResponseEntity.status(429).body(ErrorResponse.of("RATE_LIMITED"));
+            }
+            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(
+                    new ErrorResponse("WHATSAPP_API_ERROR", e.getMessage())
+            );
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+
+        Message message = new Message();
+        message.setConversation(conversation);
+        message.setDirection(MessageDirection.OUTBOUND);
+        message.setMessageType(MessageType.TEXT);
+        message.setContent("📇 Kişi Kartı Gönderildi");
+        message.setWaMessageId(waMessageId);
+        message.setSentAt(now);
+        message.setStatus(MessageStatus.SENT);
+        Message savedMessage = messageRepository.save(message);
+
+        conversation.setLastMessageAt(now);
+        conversation.setLastMessageText("📇 Kişi Kartı");
+        conversationRepository.save(conversation);
+
+        return ResponseEntity.ok(MessageDto.from(savedMessage));
+    }
+
     @PutMapping("/{id}/close")
     @Transactional
     public ResponseEntity<?> close(@PathVariable Long id) {

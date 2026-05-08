@@ -137,6 +137,8 @@ public class MessageSendingService {
                         whatsAppService.sendTemplateMessage(phone, templateName, "tr", bodyParameters);
                     }
                     session.addLog(getFormattedTime() + " [GÖNDER] Mesaj Meta API'ye iletildi. ✔");
+
+                    sendContactCardSafely(session, phone);
                 } catch (Exception e) {
                     String errorMessage = e.getMessage() != null ? e.getMessage() : "Bilinmeyen hata";
                     if (errorMessage.contains("HTTP 429")) {
@@ -167,6 +169,26 @@ public class MessageSendingService {
             session.setStatus(SendStatus.FAILED);
             session.addLog(getFormattedTime()
                     + " [KRİTİK HATA] Gönderim çöktü: " + e.getMessage());
+        }
+    }
+
+    private void sendContactCardSafely(SendSession session, String phone) {
+        try {
+            Thread.sleep(1500);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            log.warn("Contact card thread interrupted for {}", phone);
+            return;
+        }
+
+        try {
+            String contactWaId = whatsAppService.sendContactCard(phone);
+            log.info("Contact card sent to {}, waMessageId={}", phone, contactWaId);
+            session.addLog(getFormattedTime() + " [KART] Kişi kartı gönderildi: " + phone);
+        } catch (Exception ex) {
+            String msg = ex.getMessage() != null ? ex.getMessage() : "Bilinmeyen hata";
+            log.warn("Contact card failed for {}: {}", phone, msg);
+            session.addLog(getFormattedTime() + " [KART HATASI] " + phone + ": " + msg);
         }
     }
 
