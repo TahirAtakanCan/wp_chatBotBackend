@@ -276,8 +276,8 @@ public class WhatsAppService {
         String url = "https://graph.facebook.com/v18.0/" + phoneId + "/messages";
 
         HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.set("Authorization", "Bearer " + accessToken);
+        headers.setContentType(MediaType.parseMediaType("application/json; charset=UTF-8"));
+        headers.setBearerAuth(accessToken);
 
         HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
 
