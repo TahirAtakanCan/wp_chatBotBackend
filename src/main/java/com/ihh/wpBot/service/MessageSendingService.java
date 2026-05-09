@@ -1,7 +1,11 @@
 package com.ihh.wpBot.service;
 
+import com.ihh.wpBot.model.Contact;
+import com.ihh.wpBot.model.Conversation;
 import com.ihh.wpBot.model.SendSession;
 import com.ihh.wpBot.model.SendStatus;
+import com.ihh.wpBot.repository.ContactRepository;
+import com.ihh.wpBot.repository.ConversationRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,6 +17,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -23,13 +28,21 @@ public class MessageSendingService {
 
     private final Map<String, SendSession> activeSessions = new ConcurrentHashMap<>();
     private final WhatsAppService whatsAppService;
+    private final ContactRepository contactRepository;
+    private final ConversationRepository conversationRepository;
 
     @Value("${app.public.url}")
     private String publicUrl;
 
     @Autowired
-    public MessageSendingService(WhatsAppService whatsAppService) {
+    public MessageSendingService(
+            WhatsAppService whatsAppService,
+            ContactRepository contactRepository,
+            ConversationRepository conversationRepository
+    ) {
         this.whatsAppService = whatsAppService;
+        this.contactRepository = contactRepository;
+        this.conversationRepository = conversationRepository;
     }
 
     public SendSession createSession(int totalNumbers) {
@@ -122,7 +135,7 @@ public class MessageSendingService {
                 String phone = phoneNumbers.get(i);
                 session.setCurrentNumber(phone);
                 boolean shouldIncrement = true;
-                List<String> bodyParameters = buildBodyParameters(templateName, personalizedMessages, i);
+                List<String> bodyParameters = buildBodyParameters(templateName, personalizedMessages, i, phone);
 
                 try {
                     if (mediaPaths != null && !mediaPaths.isEmpty()) {
@@ -211,27 +224,71 @@ public class MessageSendingService {
 
     private List<String> buildBodyParameters(String templateName,
                                              List<String> personalizedMessages,
-                                             int index) {
-        Map<String, List<String>> templateDefaults = Map.of(
-                "bagis_tesekkur", List.of("Ahmet Yılmaz", "500"),
-                "kurban_kardeslik_cagri", List.of(),
-                "test_basit", List.of()
-        );
-
-        List<String> params = List.of();
+                                             int index,
+                                             String phoneNumber) {
         if (personalizedMessages != null && !personalizedMessages.isEmpty() && index < personalizedMessages.size()) {
             String msg = personalizedMessages.get(index);
             if (msg != null && !msg.isBlank()) {
-                params = List.of(msg);
+                List<String> params = List.of(msg);
+                log.info("Building body params for template={}, phone={}, params={} (personalized)",
+                        templateName, phoneNumber, params);
+                return params;
             }
         }
 
-        if (params.isEmpty() && templateDefaults.containsKey(templateName)) {
-            params = templateDefaults.get(templateName);
+        List<String> params = switch (templateName) {
+            case "kurban_kardeslik_cagri_v2" -> List.of(resolveContactName(phoneNumber));
+            case "bagis_tesekkur" -> List.of("Ahmet Yılmaz", "500");
+            case "kurban_kardeslik_cagri", "test_basit" -> List.of();
+            default -> List.of();
+        };
+
+        log.info("Building body params for template={}, phone={}, params={}",
+                templateName, phoneNumber, params);
+        return params;
+    }
+
+    private String resolveContactName(String phoneNumber) {
+        if (phoneNumber == null || phoneNumber.isBlank()) {
+            log.info("resolveContactName called with blank phone, using fallback");
+            return "Değerli Bağışçımız";
         }
 
-        log.info("Building body params for template={}, params={}", templateName, params);
-        return params;
+        String trimmed = phoneNumber.trim();
+        String withoutPlus = trimmed.startsWith("+") ? trimmed.substring(1) : trimmed;
+        String withPlus = trimmed.startsWith("+") ? trimmed : "+" + trimmed;
+
+        try {
+            Optional<Contact> contactOpt = contactRepository.findByPhone(withoutPlus);
+            if (contactOpt.isEmpty()) {
+                contactOpt = contactRepository.findByPhone(withPlus);
+            }
+            if (contactOpt.isPresent()) {
+                String name = contactOpt.get().getName();
+                if (name != null && !name.isBlank()) {
+                    log.info("Contact name from CONTACT for phone={}: {}", phoneNumber, name);
+                    return name.trim();
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Error reading from CONTACT for phone={}: {}", phoneNumber, e.getMessage());
+        }
+
+        try {
+            Optional<Conversation> convOpt = conversationRepository.findByPhoneNumber(withPlus);
+            if (convOpt.isPresent()) {
+                String name = convOpt.get().getContactName();
+                if (name != null && !name.isBlank()) {
+                    log.info("Contact name from Conversation for phone={}: {}", phoneNumber, name);
+                    return name.trim();
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Error reading from Conversation for phone={}: {}", phoneNumber, e.getMessage());
+        }
+
+        log.info("No contact name found for phone={}, using fallback", phoneNumber);
+        return "Değerli Bağışçımız";
     }
 
     private String getFormattedTime() {
