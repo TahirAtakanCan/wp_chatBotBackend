@@ -32,24 +32,27 @@ public class WebhookEventService {
     private final ConversationRepository conversationRepository;
     private final MessageRepository messageRepository;
     private final TransactionTemplate transactionTemplate;
+    private final ZoneId applicationZoneId;
 
     public WebhookEventService(
             WebhookEventRepository webhookEventRepository,
             ObjectMapper objectMapper,
             ConversationRepository conversationRepository,
             MessageRepository messageRepository,
-            PlatformTransactionManager transactionManager
+            PlatformTransactionManager transactionManager,
+            ZoneId applicationZoneId
     ) {
         this.webhookEventRepository = webhookEventRepository;
         this.objectMapper = objectMapper;
         this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.applicationZoneId = applicationZoneId;
     }
 
     public WebhookEvent saveIncomingPayload(String payload) {
         WebhookEvent event = new WebhookEvent();
-        event.setReceivedAt(LocalDateTime.now());
+        event.setReceivedAt(LocalDateTime.now(applicationZoneId));
         event.setPayload(payload);
         event.setEventType("UNKNOWN");
 
@@ -118,7 +121,7 @@ public class WebhookEventService {
             return;
         }
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(applicationZoneId);
 
         var existingOpt = conversationRepository.findByPhoneNumber(phoneNumber);
         boolean isNewConversation = existingOpt.isEmpty();
@@ -267,7 +270,7 @@ public class WebhookEventService {
 
         LocalDateTime sentAt = LocalDateTime.ofInstant(
                 Instant.ofEpochSecond(epochSeconds),
-                ZoneId.systemDefault()
+                applicationZoneId
         );
 
         if (sentAt.isBefore(MIN_REASONABLE_TIMESTAMP) || !sentAt.isBefore(MAX_REASONABLE_TIMESTAMP)) {

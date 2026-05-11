@@ -29,6 +29,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Map;
 import java.util.Optional;
 
@@ -39,15 +40,18 @@ public class ConversationController {
     private final ConversationRepository conversationRepository;
     private final MessageRepository messageRepository;
     private final WhatsAppService whatsAppService;
+    private final ZoneId applicationZoneId;
 
     public ConversationController(
             ConversationRepository conversationRepository,
             MessageRepository messageRepository,
-            WhatsAppService whatsAppService
+            WhatsAppService whatsAppService,
+            ZoneId applicationZoneId
     ) {
         this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;
         this.whatsAppService = whatsAppService;
+        this.applicationZoneId = applicationZoneId;
     }
 
     @GetMapping
@@ -117,7 +121,7 @@ public class ConversationController {
             );
         }
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(applicationZoneId);
 
         Message message = new Message();
         message.setConversation(conversation);
@@ -165,7 +169,7 @@ public class ConversationController {
             );
         }
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(applicationZoneId);
 
         Message message = new Message();
         message.setConversation(conversation);

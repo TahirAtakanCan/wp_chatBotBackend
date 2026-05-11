@@ -50,6 +50,8 @@ class WebhookEventServiceTest {
         }
     };
 
+    private static final ZoneId APP_ZONE = ZoneId.of("Europe/Istanbul");
+
     @Test
     void saveIncomingPayload_parsesEpochSecondsTimestamp() {
         WebhookEventRepository webhookEventRepository = mock(WebhookEventRepository.class);
@@ -81,7 +83,8 @@ class WebhookEventServiceTest {
                 new ObjectMapper(),
                 conversationRepository,
                 messageRepository,
-                NOOP_TX_MANAGER
+                NOOP_TX_MANAGER,
+                APP_ZONE
         );
 
         String payload = """
@@ -113,7 +116,7 @@ class WebhookEventServiceTest {
 
         LocalDateTime expected = LocalDateTime.ofInstant(
                 Instant.ofEpochSecond(1714999400L),
-                ZoneId.systemDefault()
+                APP_ZONE
         );
 
         assertNotNull(saved.getSentAt());
@@ -143,10 +146,11 @@ class WebhookEventServiceTest {
                 new ObjectMapper(),
                 conversationRepository,
                 messageRepository,
-                NOOP_TX_MANAGER
+                NOOP_TX_MANAGER,
+                APP_ZONE
         );
 
-        LocalDateTime before = LocalDateTime.now();
+        LocalDateTime before = LocalDateTime.now(APP_ZONE);
         String payloadMissingTs = """
                 {
                   "entry": [{
@@ -168,7 +172,7 @@ class WebhookEventServiceTest {
                 """;
 
         service.saveIncomingPayload(payloadMissingTs);
-        LocalDateTime after = LocalDateTime.now();
+        LocalDateTime after = LocalDateTime.now(APP_ZONE);
 
         ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
         verify(messageRepository, times(1)).save(messageCaptor.capture());
@@ -195,10 +199,11 @@ class WebhookEventServiceTest {
                 new ObjectMapper(),
                 conversationRepository,
                 messageRepository,
-                NOOP_TX_MANAGER
+                NOOP_TX_MANAGER,
+                APP_ZONE
         );
 
-        LocalDateTime before = LocalDateTime.now();
+        LocalDateTime before = LocalDateTime.now(APP_ZONE);
         String payloadBadTs = """
                 {
                   "entry": [{
@@ -221,7 +226,7 @@ class WebhookEventServiceTest {
                 """;
 
         service.saveIncomingPayload(payloadBadTs);
-        LocalDateTime after = LocalDateTime.now();
+        LocalDateTime after = LocalDateTime.now(APP_ZONE);
 
         ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
         verify(messageRepository, times(1)).save(messageCaptor.capture());
@@ -249,7 +254,8 @@ class WebhookEventServiceTest {
                 new ObjectMapper(),
                 conversationRepository,
                 messageRepository,
-                NOOP_TX_MANAGER
+                NOOP_TX_MANAGER,
+                APP_ZONE
         );
 
         String payload = """
@@ -304,7 +310,8 @@ class WebhookEventServiceTest {
                 new ObjectMapper(),
                 conversationRepository,
                 messageRepository,
-                NOOP_TX_MANAGER
+                NOOP_TX_MANAGER,
+                APP_ZONE
         );
 
         String payload = """
@@ -368,7 +375,8 @@ class WebhookEventServiceTest {
                 new ObjectMapper(),
                 conversationRepository,
                 messageRepository,
-                NOOP_TX_MANAGER
+                NOOP_TX_MANAGER,
+                APP_ZONE
         );
 
         String payloadNoContacts = """
