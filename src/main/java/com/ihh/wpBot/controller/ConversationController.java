@@ -18,6 +18,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -28,6 +29,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
+import java.util.Map;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/conversations")
@@ -192,6 +195,68 @@ public class ConversationController {
         conversation.setStatus(ConversationStatus.CLOSED);
         Conversation saved = conversationRepository.save(conversation);
         return ResponseEntity.ok(ConversationDto.from(saved));
+    }
+
+    @DeleteMapping("/{id}/messages/{messageId}")
+    @Transactional
+    public ResponseEntity<?> deleteMessage(
+            @PathVariable Long id,
+            @PathVariable Long messageId
+    ) {
+        Conversation conversation = conversationRepository.findById(id).orElse(null);
+        if (conversation == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ErrorResponse("CONVERSATION_NOT_FOUND", "Conversation bulunamadı.")
+            );
+        }
+
+        Optional<Message> messageOpt = messageRepository.findByIdAndConversationId(messageId, id);
+        if (messageOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ErrorResponse("MESSAGE_NOT_FOUND", "Mesaj bu conversation'da bulunamadı.")
+            );
+        }
+
+        messageRepository.delete(messageOpt.get());
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/{id}/messages")
+    @Transactional
+    public ResponseEntity<?> clearMessages(@PathVariable Long id) {
+        Conversation conversation = conversationRepository.findById(id).orElse(null);
+        if (conversation == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ErrorResponse("CONVERSATION_NOT_FOUND", "Conversation bulunamadı.")
+            );
+        }
+
+        long deleted = messageRepository.deleteByConversationId(id);
+
+        conversation.setLastMessageText(null);
+        conversation.setUnreadCount(0);
+        conversationRepository.save(conversation);
+
+        return ResponseEntity.ok(Map.of("deleted", deleted));
+    }
+
+    @DeleteMapping("/{id}")
+    @Transactional
+    public ResponseEntity<?> deleteConversation(@PathVariable Long id) {
+        Conversation conversation = conversationRepository.findById(id).orElse(null);
+        if (conversation == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ErrorResponse("CONVERSATION_NOT_FOUND", "Conversation bulunamadı.")
+            );
+        }
+
+        long deletedMessages = messageRepository.deleteByConversationId(id);
+        conversationRepository.delete(conversation);
+
+        return ResponseEntity.ok(Map.of(
+                "deletedConversationId", id,
+                "deletedMessages", deletedMessages
+        ));
     }
 
     private String truncate(String s, int maxLen) {

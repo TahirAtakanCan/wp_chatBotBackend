@@ -151,7 +151,11 @@ public class MessageSendingService {
                     }
                     session.addLog(getFormattedTime() + " [GÖNDER] Mesaj Meta API'ye iletildi. ✔");
 
-                    sendContactCardSafely(session, phone);
+                    // Otomatik vCard gönderimi geçici olarak devre dışı bırakıldı.
+                    // WhatsApp 24 saat penceresi nedeniyle template sonrası vCard
+                    // ilk gönderim için geçmiyor; vCard artık Inbox üzerinden manuel
+                    // olarak gönderiliyor.
+                    // sendContactCardSafely(session, phone);
                 } catch (Exception e) {
                     String errorMessage = e.getMessage() != null ? e.getMessage() : "Bilinmeyen hata";
                     if (errorMessage.contains("HTTP 429")) {
@@ -187,7 +191,7 @@ public class MessageSendingService {
 
     private void sendContactCardSafely(SendSession session, String phone) {
         try {
-            Thread.sleep(1500);
+            Thread.sleep(5000);
         } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
             log.warn("Contact card thread interrupted for {}", phone);
