@@ -3,8 +3,12 @@ package com.ihh.wpBot.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ihh.wpBot.model.Conversation;
 import com.ihh.wpBot.model.ConversationStatus;
+import com.ihh.wpBot.model.DeliveryRecord;
+import com.ihh.wpBot.model.DeliveryStatus;
 import com.ihh.wpBot.model.Message;
+import com.ihh.wpBot.model.MessageStatus;
 import com.ihh.wpBot.repository.ConversationRepository;
+import com.ihh.wpBot.repository.DeliveryRecordRepository;
 import com.ihh.wpBot.repository.MessageRepository;
 import com.ihh.wpBot.repository.WebhookEventRepository;
 import org.junit.jupiter.api.Test;
@@ -57,6 +61,7 @@ class WebhookEventServiceTest {
         WebhookEventRepository webhookEventRepository = mock(WebhookEventRepository.class);
         ConversationRepository conversationRepository = mock(ConversationRepository.class);
         MessageRepository messageRepository = mock(MessageRepository.class);
+        DeliveryRecordRepository deliveryRecordRepository = mock(DeliveryRecordRepository.class);
 
         when(webhookEventRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(conversationRepository.findByPhoneNumber(any())).thenReturn(Optional.empty());
@@ -83,6 +88,7 @@ class WebhookEventServiceTest {
                 new ObjectMapper(),
                 conversationRepository,
                 messageRepository,
+                deliveryRecordRepository,
                 NOOP_TX_MANAGER,
                 APP_ZONE
         );
@@ -129,6 +135,7 @@ class WebhookEventServiceTest {
         WebhookEventRepository webhookEventRepository = mock(WebhookEventRepository.class);
         ConversationRepository conversationRepository = mock(ConversationRepository.class);
         MessageRepository messageRepository = mock(MessageRepository.class);
+        DeliveryRecordRepository deliveryRecordRepository = mock(DeliveryRecordRepository.class);
 
         when(webhookEventRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(conversationRepository.findByPhoneNumber(any())).thenReturn(Optional.empty());
@@ -146,6 +153,7 @@ class WebhookEventServiceTest {
                 new ObjectMapper(),
                 conversationRepository,
                 messageRepository,
+                deliveryRecordRepository,
                 NOOP_TX_MANAGER,
                 APP_ZONE
         );
@@ -188,6 +196,7 @@ class WebhookEventServiceTest {
         WebhookEventRepository webhookEventRepository = mock(WebhookEventRepository.class);
         ConversationRepository conversationRepository = mock(ConversationRepository.class);
         MessageRepository messageRepository = mock(MessageRepository.class);
+        DeliveryRecordRepository deliveryRecordRepository = mock(DeliveryRecordRepository.class);
 
         when(webhookEventRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(conversationRepository.findByPhoneNumber(any())).thenReturn(Optional.empty());
@@ -199,6 +208,7 @@ class WebhookEventServiceTest {
                 new ObjectMapper(),
                 conversationRepository,
                 messageRepository,
+                deliveryRecordRepository,
                 NOOP_TX_MANAGER,
                 APP_ZONE
         );
@@ -243,6 +253,7 @@ class WebhookEventServiceTest {
         WebhookEventRepository webhookEventRepository = mock(WebhookEventRepository.class);
         ConversationRepository conversationRepository = mock(ConversationRepository.class);
         MessageRepository messageRepository = mock(MessageRepository.class);
+        DeliveryRecordRepository deliveryRecordRepository = mock(DeliveryRecordRepository.class);
 
         when(webhookEventRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(conversationRepository.findByPhoneNumber(any())).thenReturn(Optional.empty());
@@ -254,6 +265,7 @@ class WebhookEventServiceTest {
                 new ObjectMapper(),
                 conversationRepository,
                 messageRepository,
+                deliveryRecordRepository,
                 NOOP_TX_MANAGER,
                 APP_ZONE
         );
@@ -291,6 +303,7 @@ class WebhookEventServiceTest {
         WebhookEventRepository webhookEventRepository = mock(WebhookEventRepository.class);
         ConversationRepository conversationRepository = mock(ConversationRepository.class);
         MessageRepository messageRepository = mock(MessageRepository.class);
+        DeliveryRecordRepository deliveryRecordRepository = mock(DeliveryRecordRepository.class);
 
         when(webhookEventRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
@@ -310,6 +323,7 @@ class WebhookEventServiceTest {
                 new ObjectMapper(),
                 conversationRepository,
                 messageRepository,
+                deliveryRecordRepository,
                 NOOP_TX_MANAGER,
                 APP_ZONE
         );
@@ -364,6 +378,7 @@ class WebhookEventServiceTest {
         WebhookEventRepository webhookEventRepository = mock(WebhookEventRepository.class);
         ConversationRepository conversationRepository = mock(ConversationRepository.class);
         MessageRepository messageRepository = mock(MessageRepository.class);
+        DeliveryRecordRepository deliveryRecordRepository = mock(DeliveryRecordRepository.class);
 
         when(webhookEventRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(conversationRepository.findByPhoneNumber(any())).thenReturn(Optional.empty());
@@ -375,6 +390,7 @@ class WebhookEventServiceTest {
                 new ObjectMapper(),
                 conversationRepository,
                 messageRepository,
+                deliveryRecordRepository,
                 NOOP_TX_MANAGER,
                 APP_ZONE
         );
@@ -402,6 +418,65 @@ class WebhookEventServiceTest {
         verify(conversationRepository, times(1)).save(convCaptor.capture());
         Conversation saved = convCaptor.getValue();
         assertNull(saved.getContactName());
+    }
+
+    @Test
+    void saveIncomingPayload_statusEvent_updatesMessageAndDeliveryRecord() {
+        WebhookEventRepository webhookEventRepository = mock(WebhookEventRepository.class);
+        ConversationRepository conversationRepository = mock(ConversationRepository.class);
+        MessageRepository messageRepository = mock(MessageRepository.class);
+        DeliveryRecordRepository deliveryRecordRepository = mock(DeliveryRecordRepository.class);
+
+        when(webhookEventRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        Message outboundMessage = new Message();
+        outboundMessage.setWaMessageId("wamid.status.test");
+        outboundMessage.setStatus(MessageStatus.SENT);
+        when(messageRepository.findByWaMessageId("wamid.status.test")).thenReturn(Optional.of(outboundMessage));
+        when(messageRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        DeliveryRecord deliveryRecord = new DeliveryRecord();
+        deliveryRecord.setWaMessageId("wamid.status.test");
+        deliveryRecord.setStatus(DeliveryStatus.SENT);
+        when(deliveryRecordRepository.findByWaMessageId("wamid.status.test")).thenReturn(Optional.of(deliveryRecord));
+        when(deliveryRecordRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        WebhookEventService service = new WebhookEventService(
+                webhookEventRepository,
+                new ObjectMapper(),
+                conversationRepository,
+                messageRepository,
+                deliveryRecordRepository,
+                NOOP_TX_MANAGER,
+                APP_ZONE
+        );
+
+        String payload = """
+                {
+                  "entry": [{
+                    "changes": [{
+                      "value": {
+                        "statuses": [{
+                          "id": "wamid.status.test",
+                          "status": "failed",
+                          "recipient_id": "905071610354",
+                          "errors": [
+                            { "code": 131049, "title": "Message failed due to quality issues" }
+                          ]
+                        }]
+                      }
+                    }]
+                  }]
+                }
+                """;
+
+        service.saveIncomingPayload(payload);
+
+        assertEquals(MessageStatus.FAILED, outboundMessage.getStatus());
+        assertEquals(DeliveryStatus.FAILED, deliveryRecord.getStatus());
+        assertEquals("131049", deliveryRecord.getFailureCode());
+        assertEquals("Message failed due to quality issues", deliveryRecord.getFailureReason());
+        assertNotNull(deliveryRecord.getFailedAt());
     }
 }
 

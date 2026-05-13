@@ -104,12 +104,12 @@ public class WhatsAppService {
         return waMessageId;
     }
 
-    public void sendTemplateMessage(String toPhoneNumber, String templateName, String languageCode) {
-        sendTemplateMessage(toPhoneNumber, templateName, languageCode, null);
+    public String sendTemplateMessage(String toPhoneNumber, String templateName, String languageCode) {
+        return sendTemplateMessage(toPhoneNumber, templateName, languageCode, null);
     }
 
-    public void sendTemplateMessage(String toPhoneNumber, String templateName, String languageCode,
-                                    List<String> bodyParameters) {
+    public String sendTemplateMessage(String toPhoneNumber, String templateName, String languageCode,
+                                      List<String> bodyParameters) {
         Map<String, Object> body = new HashMap<>();
         body.put("messaging_product", "whatsapp");
         body.put("to", toPhoneNumber);
@@ -144,17 +144,19 @@ public class WhatsAppService {
         body.put("template", templateMap);
 
         Map<String, Object> response = postMessageRequest(body);
-        System.out.println("Meta API Response: " + response);
+        String waMessageId = extractWaMessageId(response);
+        log.info("Template message sent, waMessageId={}", waMessageId);
+        return waMessageId;
     }
 
-    public void sendImageTemplateMessage(String toPhoneNumber, String templateName,
-                                         String languageCode, String imageUrl) {
-        sendImageTemplateMessage(toPhoneNumber, templateName, languageCode, imageUrl, null);
+    public String sendImageTemplateMessage(String toPhoneNumber, String templateName,
+                                           String languageCode, String imageUrl) {
+        return sendImageTemplateMessage(toPhoneNumber, templateName, languageCode, imageUrl, null);
     }
 
-    public void sendImageTemplateMessage(String toPhoneNumber, String templateName,
-                                         String languageCode, String imageUrl,
-                                         List<String> bodyParameters) {
+    public String sendImageTemplateMessage(String toPhoneNumber, String templateName,
+                                           String languageCode, String imageUrl,
+                                           List<String> bodyParameters) {
         Map<String, Object> body = new HashMap<>();
         body.put("messaging_product", "whatsapp");
         body.put("to", toPhoneNumber);
@@ -204,7 +206,9 @@ public class WhatsAppService {
         body.put("template", templateMap);
 
         Map<String, Object> response = postMessageRequest(body);
-        System.out.println("Meta API Image Template Response: " + response);
+        String waMessageId = extractWaMessageId(response);
+        log.info("Image template message sent, waMessageId={}", waMessageId);
+        return waMessageId;
     }
 
     public String sendContactCard(String toPhoneNumber) {

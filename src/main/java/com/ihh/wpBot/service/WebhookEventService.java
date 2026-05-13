@@ -4,12 +4,15 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ihh.wpBot.model.Conversation;
 import com.ihh.wpBot.model.ConversationStatus;
+import com.ihh.wpBot.model.DeliveryRecord;
+import com.ihh.wpBot.model.DeliveryStatus;
 import com.ihh.wpBot.model.Message;
 import com.ihh.wpBot.model.MessageDirection;
 import com.ihh.wpBot.model.MessageStatus;
 import com.ihh.wpBot.model.MessageType;
 import com.ihh.wpBot.model.WebhookEvent;
 import com.ihh.wpBot.repository.ConversationRepository;
+import com.ihh.wpBot.repository.DeliveryRecordRepository;
 import com.ihh.wpBot.repository.MessageRepository;
 import com.ihh.wpBot.repository.WebhookEventRepository;
 import org.slf4j.Logger;
@@ -31,6 +34,7 @@ public class WebhookEventService {
     private final ObjectMapper objectMapper;
     private final ConversationRepository conversationRepository;
     private final MessageRepository messageRepository;
+    private final DeliveryRecordRepository deliveryRecordRepository;
     private final TransactionTemplate transactionTemplate;
     private final ZoneId applicationZoneId;
 
@@ -39,6 +43,7 @@ public class WebhookEventService {
             ObjectMapper objectMapper,
             ConversationRepository conversationRepository,
             MessageRepository messageRepository,
+            DeliveryRecordRepository deliveryRecordRepository,
             PlatformTransactionManager transactionManager,
             ZoneId applicationZoneId
     ) {
@@ -46,6 +51,7 @@ public class WebhookEventService {
         this.objectMapper = objectMapper;
         this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;
+        this.deliveryRecordRepository = deliveryRecordRepository;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.applicationZoneId = applicationZoneId;
     }
@@ -198,16 +204,65 @@ public class WebhookEventService {
             return;
         }
 
-        MessageStatus newStatus = mapMessageStatus(statusNode.path("status").asText(null));
-        if (newStatus == null) {
-            return;
+        String statusRaw = statusNode.path("status").asText(null);
+        MessageStatus newStatus = mapMessageStatus(statusRaw);
+        if (newStatus != null) {
+            messageRepository.findByWaMessageId(waMessageId).ifPresentOrElse(msg -> {
+                msg.setStatus(newStatus);
+                messageRepository.save(msg);
+                log.info("Message status updated. waMessageId={}, status={}", waMessageId, newStatus);
+            }, () -> log.info("Message not found for status update. waMessageId={}", waMessageId));
         }
 
-        messageRepository.findByWaMessageId(waMessageId).ifPresentOrElse(msg -> {
-            msg.setStatus(newStatus);
-            messageRepository.save(msg);
-            log.info("Message status updated. waMessageId={}, status={}", waMessageId, newStatus);
-        }, () -> log.info("Message not found for status update. waMessageId={}", waMessageId));
+        try {
+            deliveryRecordRepository.findByWaMessageId(waMessageId).ifPresentOrElse(record -> {
+                LocalDateTime now = LocalDateTime.now(applicationZoneId);
+                applyDeliveryStatusUpdate(record, statusRaw, statusNode.path("errors"), now);
+                deliveryRecordRepository.save(record);
+                log.info("DeliveryRecord updated. waMessageId={}, status={}", waMessageId, statusRaw);
+            }, () -> log.debug("DeliveryRecord not found for status update: {}", waMessageId));
+        } catch (Exception e) {
+            log.warn("DeliveryRecord güncellenirken hata: {}", e.getMessage());
+        }
+    }
+
+    private void applyDeliveryStatusUpdate(DeliveryRecord record, String statusRaw, JsonNode errorsNode, LocalDateTime now) {
+        if (statusRaw == null) {
+            return;
+        }
+        switch (statusRaw.trim().toLowerCase()) {
+            case "delivered":
+                record.setStatus(DeliveryStatus.DELIVERED);
+                if (record.getDeliveredAt() == null) {
+                    record.setDeliveredAt(now);
+                }
+                break;
+            case "read":
+                record.setStatus(DeliveryStatus.READ);
+                if (record.getReadAt() == null) {
+                    record.setReadAt(now);
+                }
+                break;
+            case "failed":
+                record.setStatus(DeliveryStatus.FAILED);
+                if (record.getFailedAt() == null) {
+                    record.setFailedAt(now);
+                }
+                if (errorsNode != null && errorsNode.isArray() && !errorsNode.isEmpty()) {
+                    JsonNode firstError = errorsNode.get(0);
+                    if (firstError.hasNonNull("code")) {
+                        record.setFailureCode(firstError.path("code").asText(null));
+                    }
+                    String title = firstError.path("title").asText(null);
+                    if (title != null && !title.isBlank()) {
+                        record.setFailureReason(title);
+                    }
+                }
+                break;
+            default:
+                // SENT state is already marked when message is accepted by Meta.
+                break;
+        }
     }
 
     private MessageType resolveMessageType(String type) {

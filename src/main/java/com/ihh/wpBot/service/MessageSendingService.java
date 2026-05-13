@@ -2,10 +2,13 @@ package com.ihh.wpBot.service;
 
 import com.ihh.wpBot.model.Contact;
 import com.ihh.wpBot.model.Conversation;
+import com.ihh.wpBot.model.DeliveryRecord;
+import com.ihh.wpBot.model.DeliveryStatus;
 import com.ihh.wpBot.model.SendSession;
 import com.ihh.wpBot.model.SendStatus;
 import com.ihh.wpBot.repository.ContactRepository;
 import com.ihh.wpBot.repository.ConversationRepository;
+import com.ihh.wpBot.repository.DeliveryRecordRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,6 +33,7 @@ public class MessageSendingService {
     private final WhatsAppService whatsAppService;
     private final ContactRepository contactRepository;
     private final ConversationRepository conversationRepository;
+    private final DeliveryRecordRepository deliveryRecordRepository;
 
     @Value("${app.public.url}")
     private String publicUrl;
@@ -38,11 +42,13 @@ public class MessageSendingService {
     public MessageSendingService(
             WhatsAppService whatsAppService,
             ContactRepository contactRepository,
-            ConversationRepository conversationRepository
+            ConversationRepository conversationRepository,
+            DeliveryRecordRepository deliveryRecordRepository
     ) {
         this.whatsAppService = whatsAppService;
         this.contactRepository = contactRepository;
         this.conversationRepository = conversationRepository;
+        this.deliveryRecordRepository = deliveryRecordRepository;
     }
 
     public SendSession createSession(int totalNumbers) {
@@ -138,18 +144,20 @@ public class MessageSendingService {
                 List<String> bodyParameters = buildBodyParameters(templateName, personalizedMessages, i, phone);
 
                 try {
+                    String templateWaId;
                     if (mediaPaths != null && !mediaPaths.isEmpty()) {
                         String filename = extractFilename(mediaPaths.get(0));
                         String base = publicUrl.endsWith("/")
                                 ? publicUrl.substring(0, publicUrl.length() - 1)
                                 : publicUrl;
                         String imageUrl = base + "/api/media/" + filename;
-                        whatsAppService.sendImageTemplateMessage(
+                        templateWaId = whatsAppService.sendImageTemplateMessage(
                                 phone, templateName, "tr", imageUrl, bodyParameters);
                     } else {
-                        whatsAppService.sendTemplateMessage(phone, templateName, "tr", bodyParameters);
+                        templateWaId = whatsAppService.sendTemplateMessage(phone, templateName, "tr", bodyParameters);
                     }
                     session.addLog(getFormattedTime() + " [GÖNDER] Mesaj Meta API'ye iletildi. ✔");
+                    createDeliveryRecordSafely(session, phone, templateName, templateWaId);
 
                     // Otomatik vCard gönderimi geçici olarak devre dışı bırakıldı.
                     // WhatsApp 24 saat penceresi nedeniyle template sonrası vCard
@@ -224,6 +232,37 @@ public class MessageSendingService {
         }
         int lastSlash = s.lastIndexOf('/');
         return lastSlash >= 0 ? s.substring(lastSlash + 1) : s;
+    }
+
+    private void createDeliveryRecordSafely(SendSession session, String phone, String templateName, String templateWaId) {
+        try {
+            if (templateWaId == null || templateWaId.isBlank()) {
+                return;
+            }
+            if (deliveryRecordRepository.existsByWaMessageId(templateWaId)) {
+                log.debug("DeliveryRecord already exists for waMessageId={}", templateWaId);
+                return;
+            }
+
+            DeliveryRecord record = new DeliveryRecord();
+            record.setPhoneNumber(normalizePhoneForDelivery(phone));
+            record.setContactName(resolveContactName(phone));
+            record.setTemplateName(templateName);
+            record.setWaMessageId(templateWaId);
+            record.setStatus(DeliveryStatus.SENT);
+            record.setSentAt(LocalDateTime.now());
+            record.setCampaignId(session.getSessionId());
+            deliveryRecordRepository.save(record);
+        } catch (Exception e) {
+            log.warn("DeliveryRecord oluşturulurken hata: {}", e.getMessage());
+        }
+    }
+
+    private String normalizePhoneForDelivery(String phoneNumber) {
+        if (phoneNumber == null) {
+            return null;
+        }
+        return phoneNumber.trim().replace("+", "").replace(" ", "").replace("-", "");
     }
 
     private List<String> buildBodyParameters(String templateName,
