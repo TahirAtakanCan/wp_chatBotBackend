@@ -35,6 +35,9 @@ public class MediaController {
     @Value("${app.server.url}")
     private String serverBaseUrl;
 
+    @Value("${app.public.url}")
+    private String publicUrl;
+
     private final MessageRepository messageRepository;
 
     private final String UPLOAD_DIR = "uploads/";
@@ -63,10 +66,13 @@ public class MediaController {
             Path targetPath = Paths.get(UPLOAD_DIR).resolve(safeFilename);
             Files.copy(file.getInputStream(), targetPath, StandardCopyOption.REPLACE_EXISTING);
 
-            // 2. DİKKAT: URL formatı /api/media/{dosyaismi} olmalı, araya /uploads/ girmemeli!
-            String fileUrl = serverBaseUrl + "/api/media/" + safeFilename;
+            String fileUrl = normalizeBaseUrl(publicUrl) + "/api/media/public/" + safeFilename;
 
-            return ResponseEntity.ok(Collections.singletonMap("url", fileUrl));
+            return ResponseEntity.ok(Map.of(
+                    "filename", safeFilename,
+                    "url", fileUrl,
+                    "type", file.getContentType()
+            ));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Collections.singletonMap("error", "Hata: " + e.getMessage()));
         }
@@ -179,5 +185,16 @@ public class MediaController {
         } catch (Exception ignored) {
             return MediaType.APPLICATION_OCTET_STREAM;
         }
+    }
+
+    private String normalizeBaseUrl(String baseUrl) {
+        if (baseUrl == null || baseUrl.isBlank()) {
+            return "";
+        }
+        String trimmed = baseUrl.trim();
+        if (trimmed.endsWith("/")) {
+            return trimmed.substring(0, trimmed.length() - 1);
+        }
+        return trimmed;
     }
 }
