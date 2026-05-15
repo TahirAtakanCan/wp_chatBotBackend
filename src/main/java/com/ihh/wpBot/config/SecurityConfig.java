@@ -35,9 +35,10 @@ public class SecurityConfig {
                 .headers(headers -> headers.frameOptions(frame -> frame.disable()))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/login", "/api/auth/setup").permitAll()
-                        .requestMatchers("/api/media/**").permitAll()
                         .requestMatchers("/api/webhook").permitAll()
                         .requestMatchers("/api/health").permitAll()
+                        .requestMatchers("/api/media/public/**").permitAll()
+                        .requestMatchers("/api/media/**").authenticated()
                         .requestMatchers("/api/conversations/**").authenticated()
                         .requestMatchers("/api/delivery/**").authenticated()
                         .requestMatchers("/api/templates/**").authenticated()

@@ -2,6 +2,7 @@ package com.ihh.wpBot.controller.dto;
 
 import com.ihh.wpBot.model.Conversation;
 import com.ihh.wpBot.model.ConversationStatus;
+import com.ihh.wpBot.model.MessageType;
 
 import java.time.LocalDateTime;
 
@@ -11,6 +12,7 @@ public record ConversationDto(
         String contactName,
         LocalDateTime lastMessageAt,
         String lastMessageText,
+        MessageType lastMessageType,
         int unreadCount,
         ConversationStatus status,
         boolean replyWindowOpen
@@ -22,6 +24,7 @@ public record ConversationDto(
                 conversation.getContactName(),
                 conversation.getLastMessageAt(),
                 conversation.getLastMessageText(),
+                conversation.getLastMessageType(),
                 conversation.getUnreadCount(),
                 conversation.getStatus(),
                 conversation.isReplyWindowOpen()

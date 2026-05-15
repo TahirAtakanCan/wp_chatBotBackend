@@ -104,6 +104,42 @@ public class WhatsAppService {
         return waMessageId;
     }
 
+    public String sendImageMessage(String toPhoneNumber, String imageUrl, String caption) {
+        String metaPhone = toPhoneNumber == null ? null : toPhoneNumber.trim();
+        if (metaPhone != null && metaPhone.startsWith("+")) {
+            metaPhone = metaPhone.substring(1);
+        }
+
+        log.info("Sending image message to {}", metaPhone);
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("messaging_product", "whatsapp");
+        body.put("to", metaPhone);
+        body.put("type", "image");
+
+        Map<String, Object> imageBody = new HashMap<>();
+        imageBody.put("link", imageUrl);
+        if (caption != null && !caption.isBlank()) {
+            imageBody.put("caption", caption);
+        }
+        body.put("image", imageBody);
+
+        Map<String, Object> response;
+        try {
+            response = postMessageRequest(body);
+        } catch (IllegalStateException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof HttpStatusCodeException httpEx && httpEx.getStatusCode().value() == 429) {
+                throw new IllegalStateException("RATE_LIMITED", e);
+            }
+            throw e;
+        }
+
+        String waMessageId = extractWaMessageId(response);
+        log.info("Image message sent, waMessageId={}", waMessageId);
+        return waMessageId;
+    }
+
     public String sendTemplateMessage(String toPhoneNumber, String templateName, String languageCode) {
         return sendTemplateMessage(toPhoneNumber, templateName, languageCode, null);
     }

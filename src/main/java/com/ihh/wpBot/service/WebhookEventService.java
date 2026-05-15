@@ -37,6 +37,7 @@ public class WebhookEventService {
     private final DeliveryRecordRepository deliveryRecordRepository;
     private final TransactionTemplate transactionTemplate;
     private final ZoneId applicationZoneId;
+    private final WhatsAppMediaService whatsAppMediaService;
 
     public WebhookEventService(
             WebhookEventRepository webhookEventRepository,
@@ -45,7 +46,8 @@ public class WebhookEventService {
             MessageRepository messageRepository,
             DeliveryRecordRepository deliveryRecordRepository,
             PlatformTransactionManager transactionManager,
-            ZoneId applicationZoneId
+            ZoneId applicationZoneId,
+            WhatsAppMediaService whatsAppMediaService
     ) {
         this.webhookEventRepository = webhookEventRepository;
         this.objectMapper = objectMapper;
@@ -54,6 +56,7 @@ public class WebhookEventService {
         this.deliveryRecordRepository = deliveryRecordRepository;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.applicationZoneId = applicationZoneId;
+        this.whatsAppMediaService = whatsAppMediaService;
     }
 
     public WebhookEvent saveIncomingPayload(String payload) {
@@ -153,9 +156,13 @@ public class WebhookEventService {
         Message inbound = new Message();
         inbound.setConversation(conversation);
         inbound.setDirection(MessageDirection.INBOUND);
-        inbound.setMessageType(resolveMessageType(messageNode.path("type").asText(null)));
-        String content = resolveInboundContent(messageNode);
+        MessageType messageType = resolveMessageType(messageNode.path("type").asText(null));
+        inbound.setMessageType(messageType);
+        String content = resolveInboundContent(messageNode, messageType);
         inbound.setContent(content);
+        String caption = resolveInboundCaption(messageNode, messageType);
+        inbound.setCaption(caption);
+        enrichInboundMedia(messageNode, messageType, inbound);
         String waMessageId = messageNode.path("id").asText(null);
         inbound.setWaMessageId(waMessageId);
         inbound.setSentAt(resolveMessageSentAt(messageNode, now, waMessageId));
@@ -163,7 +170,8 @@ public class WebhookEventService {
 
         conversation.setLastMessageAt(now);
         conversation.setLastInboundAt(now);
-        conversation.setLastMessageText(truncate(content, 500));
+        conversation.setLastMessageText(truncate(resolveConversationPreview(messageType, content), 500));
+        conversation.setLastMessageType(messageType);
         conversation.setUnreadCount(conversation.getUnreadCount() + 1);
         if (conversation.getStatus() == ConversationStatus.CLOSED) {
             conversation.setStatus(ConversationStatus.OPEN);
@@ -270,39 +278,93 @@ public class WebhookEventService {
             return MessageType.TEXT;
         }
         String t = type.trim().toLowerCase();
-        if ("image".equals(t)) {
-            return MessageType.IMAGE;
-        }
-        if ("text".equals(t)) {
-            return MessageType.TEXT;
-        }
-        return MessageType.TEXT;
+        return switch (t) {
+            case "image" -> MessageType.IMAGE;
+            case "video" -> MessageType.VIDEO;
+            case "audio" -> MessageType.AUDIO;
+            case "document" -> MessageType.DOCUMENT;
+            case "sticker" -> MessageType.STICKER;
+            case "text" -> MessageType.TEXT;
+            default -> MessageType.TEXT;
+        };
     }
 
-    private String resolveInboundContent(JsonNode messageNode) {
-        String type = messageNode.path("type").asText(null);
-        if (type != null) {
-            String t = type.trim().toLowerCase();
-            if ("text".equals(t)) {
-                String body = messageNode.path("text").path("body").asText(null);
-                if (body != null && !body.isBlank()) {
-                    return body;
-                }
+    private String resolveInboundContent(JsonNode messageNode, MessageType messageType) {
+        if (messageType == MessageType.TEXT) {
+            String body = messageNode.path("text").path("body").asText(null);
+            if (body != null && !body.isBlank()) {
+                return body;
             }
-            if ("image".equals(t)) {
-                String caption = messageNode.path("image").path("caption").asText(null);
-                if (caption != null && !caption.isBlank()) {
-                    return caption;
-                }
-                return "[medya]";
-            }
+            return "";
         }
 
-        String fallback = messageNode.path("text").path("body").asText(null);
-        if (fallback != null && !fallback.isBlank()) {
-            return fallback;
+        String caption = resolveInboundCaption(messageNode, messageType);
+        if (caption != null && !caption.isBlank()) {
+            return caption;
         }
-        return "[medya]";
+        return "";
+    }
+
+    private String resolveInboundCaption(JsonNode messageNode, MessageType messageType) {
+        JsonNode mediaNode = resolveMediaNode(messageNode, messageType);
+        if (mediaNode == null || mediaNode.isMissingNode()) {
+            return null;
+        }
+        String caption = mediaNode.path("caption").asText(null);
+        if (caption == null || caption.isBlank()) {
+            return null;
+        }
+        return caption;
+    }
+
+    private void enrichInboundMedia(JsonNode messageNode, MessageType messageType, Message inbound) {
+        JsonNode mediaNode = resolveMediaNode(messageNode, messageType);
+        if (mediaNode == null || mediaNode.isMissingNode()) {
+            return;
+        }
+        String mediaId = mediaNode.path("id").asText(null);
+        if (mediaId == null || mediaId.isBlank()) {
+            return;
+        }
+        inbound.setMediaId(mediaId);
+        inbound.setMediaUrl("/api/media/" + mediaId);
+
+        String mimeType = mediaNode.path("mime_type").asText(null);
+        if (mimeType != null && !mimeType.isBlank()) {
+            inbound.setMimeType(mimeType);
+        }
+
+        whatsAppMediaService.downloadIncomingMedia(mediaId).ifPresent(storedMedia -> {
+            inbound.setMediaStoragePath(storedMedia.storagePath());
+            if (storedMedia.mimeType() != null && !storedMedia.mimeType().isBlank()) {
+                inbound.setMimeType(storedMedia.mimeType());
+            }
+        });
+    }
+
+    private JsonNode resolveMediaNode(JsonNode messageNode, MessageType messageType) {
+        return switch (messageType) {
+            case IMAGE -> messageNode.path("image");
+            case VIDEO -> messageNode.path("video");
+            case AUDIO -> messageNode.path("audio");
+            case DOCUMENT -> messageNode.path("document");
+            case STICKER -> messageNode.path("sticker");
+            default -> null;
+        };
+    }
+
+    private String resolveConversationPreview(MessageType messageType, String content) {
+        if (messageType == null) {
+            return content;
+        }
+        return switch (messageType) {
+            case IMAGE -> "📷 Fotoğraf";
+            case VIDEO -> "🎬 Video";
+            case AUDIO -> "🎵 Ses";
+            case DOCUMENT -> "📄 Belge";
+            case STICKER -> "🧩 Sticker";
+            default -> content;
+        };
     }
 
     private static final LocalDateTime MIN_REASONABLE_TIMESTAMP = LocalDateTime.of(2020, 1, 1, 0, 0);

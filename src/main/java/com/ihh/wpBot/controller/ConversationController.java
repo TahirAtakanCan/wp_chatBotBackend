@@ -2,6 +2,7 @@ package com.ihh.wpBot.controller;
 
 import com.ihh.wpBot.controller.dto.ConversationDto;
 import com.ihh.wpBot.controller.dto.ErrorResponse;
+import com.ihh.wpBot.controller.dto.ImageReplyRequest;
 import com.ihh.wpBot.controller.dto.MessageDto;
 import com.ihh.wpBot.controller.dto.ReplyRequest;
 import com.ihh.wpBot.model.Conversation;
@@ -13,9 +14,13 @@ import com.ihh.wpBot.model.MessageType;
 import com.ihh.wpBot.repository.ConversationRepository;
 import com.ihh.wpBot.repository.MessageRepository;
 import com.ihh.wpBot.service.WhatsAppService;
+import org.springframework.core.io.PathResource;
+import org.springframework.core.io.Resource;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -32,6 +37,8 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Map;
 import java.util.Optional;
+import java.nio.file.Path;
+import java.nio.file.Files;
 
 @RestController
 @RequestMapping("/api/conversations")
@@ -135,6 +142,70 @@ public class ConversationController {
 
         conversation.setLastMessageAt(now);
         conversation.setLastMessageText(truncate(request.text(), 500));
+        conversation.setLastMessageType(MessageType.TEXT);
+        conversationRepository.save(conversation);
+
+        return ResponseEntity.ok(MessageDto.from(savedMessage));
+    }
+
+    @PostMapping("/{id}/reply-image")
+    @Transactional
+    public ResponseEntity<?> replyImage(
+            @PathVariable Long id,
+            @RequestBody ImageReplyRequest request
+    ) {
+        Conversation conversation = conversationRepository.findById(id).orElse(null);
+        if (conversation == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        }
+
+        if (!conversation.isReplyWindowOpen()) {
+            return ResponseEntity.unprocessableEntity().body(
+                    new ErrorResponse(
+                            "REPLY_WINDOW_CLOSED",
+                            "24 saatlik müşteri penceresi kapanmış. Yalnızca onaylı template gönderebilirsiniz."
+                    )
+            );
+        }
+
+        String imageUrl = request.imageUrl();
+        if (imageUrl == null || imageUrl.isBlank()) {
+            return ResponseEntity.badRequest().body(
+                    new ErrorResponse("IMAGE_URL_REQUIRED", "imageUrl zorunludur.")
+            );
+        }
+
+        String waMessageId;
+        try {
+            waMessageId = whatsAppService.sendImageMessage(conversation.getPhoneNumber(), imageUrl, request.caption());
+        } catch (IllegalStateException e) {
+            if ("RATE_LIMITED".equals(e.getMessage())) {
+                return ResponseEntity.status(429).body(ErrorResponse.of("RATE_LIMITED"));
+            }
+            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(
+                    new ErrorResponse("WHATSAPP_API_ERROR", e.getMessage())
+            );
+        }
+
+        LocalDateTime now = LocalDateTime.now(applicationZoneId);
+        String trimmedCaption = request.caption() != null ? request.caption().trim() : null;
+
+        Message message = new Message();
+        message.setConversation(conversation);
+        message.setDirection(MessageDirection.OUTBOUND);
+        message.setMessageType(MessageType.IMAGE);
+        message.setContent(trimmedCaption == null ? "" : trimmedCaption);
+        message.setCaption(trimmedCaption);
+        message.setMediaUrl(imageUrl.trim());
+        message.setMediaId(extractMediaIdFromUrl(imageUrl));
+        message.setWaMessageId(waMessageId);
+        message.setSentAt(now);
+        message.setStatus(MessageStatus.SENT);
+        Message savedMessage = messageRepository.save(message);
+
+        conversation.setLastMessageAt(now);
+        conversation.setLastMessageType(MessageType.IMAGE);
+        conversation.setLastMessageText("📷 Fotoğraf");
         conversationRepository.save(conversation);
 
         return ResponseEntity.ok(MessageDto.from(savedMessage));
@@ -183,6 +254,7 @@ public class ConversationController {
 
         conversation.setLastMessageAt(now);
         conversation.setLastMessageText("📇 Kişi Kartı");
+        conversation.setLastMessageType(MessageType.TEXT);
         conversationRepository.save(conversation);
 
         return ResponseEntity.ok(MessageDto.from(savedMessage));
@@ -238,10 +310,18 @@ public class ConversationController {
         long deleted = messageRepository.deleteByConversationId(id);
 
         conversation.setLastMessageText(null);
+        conversation.setLastMessageType(null);
         conversation.setUnreadCount(0);
         conversationRepository.save(conversation);
 
         return ResponseEntity.ok(Map.of("deleted", deleted));
+    }
+
+    @GetMapping("/messages/{messageId}/media")
+    public ResponseEntity<Resource> getMessageMedia(@PathVariable Long messageId) {
+        return messageRepository.findByIdAndMediaStoragePathIsNotNull(messageId)
+                .map(this::mediaResponse)
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).build());
     }
 
     @DeleteMapping("/{id}")
@@ -271,6 +351,54 @@ public class ConversationController {
             return s;
         }
         return s.substring(0, maxLen);
+    }
+
+    private ResponseEntity<Resource> mediaResponse(Message message) {
+        try {
+            Path path = Path.of(message.getMediaStoragePath());
+            if (!Files.exists(path) || !Files.isReadable(path)) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+            }
+            MediaType mediaType = resolveMediaType(message.getMimeType());
+            Resource resource = new PathResource(path);
+            return ResponseEntity.ok()
+                    .contentType(mediaType)
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + path.getFileName() + "\"")
+                    .body(resource);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    private MediaType resolveMediaType(String mimeType) {
+        if (mimeType == null || mimeType.isBlank()) {
+            return MediaType.APPLICATION_OCTET_STREAM;
+        }
+        try {
+            return MediaType.parseMediaType(mimeType);
+        } catch (Exception ignored) {
+            return MediaType.APPLICATION_OCTET_STREAM;
+        }
+    }
+
+    private String extractMediaIdFromUrl(String mediaUrl) {
+        if (mediaUrl == null) {
+            return null;
+        }
+        String url = mediaUrl.trim();
+        int queryIdx = url.indexOf('?');
+        if (queryIdx >= 0) {
+            url = url.substring(0, queryIdx);
+        }
+        int mediaIdx = url.lastIndexOf("/api/media/");
+        if (mediaIdx < 0) {
+            return null;
+        }
+        String suffix = url.substring(mediaIdx + "/api/media/".length());
+        if (suffix.startsWith("public/")) {
+            suffix = suffix.substring("public/".length());
+        }
+        return suffix.isBlank() ? null : suffix;
     }
 }
 

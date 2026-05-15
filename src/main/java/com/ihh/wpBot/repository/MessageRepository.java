@@ -12,9 +12,13 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
 
     Optional<Message> findByWaMessageId(String waMessageId);
 
+    Optional<Message> findTopByMediaIdOrderBySentAtDesc(String mediaId);
+
     Page<Message> findByConversationIdOrderBySentAtAsc(Long conversationId, Pageable pageable);
 
     Optional<Message> findByIdAndConversationId(Long id, Long conversationId);
+
+    Optional<Message> findByIdAndMediaStoragePathIsNotNull(Long id);
 
     @Modifying
     long deleteByConversationId(Long conversationId);

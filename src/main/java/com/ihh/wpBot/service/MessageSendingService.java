@@ -150,7 +150,7 @@ public class MessageSendingService {
                         String base = publicUrl.endsWith("/")
                                 ? publicUrl.substring(0, publicUrl.length() - 1)
                                 : publicUrl;
-                        String imageUrl = base + "/api/media/" + filename;
+                        String imageUrl = base + "/api/media/public/" + filename;
                         templateWaId = whatsAppService.sendImageTemplateMessage(
                                 phone, templateName, "tr", imageUrl, bodyParameters);
                     } else {
@@ -225,6 +225,10 @@ public class MessageSendingService {
         int q = s.indexOf('?');
         if (q >= 0) {
             s = s.substring(0, q);
+        }
+        int apiPublicMedia = s.indexOf("/api/media/public/");
+        if (apiPublicMedia >= 0) {
+            return s.substring(apiPublicMedia + "/api/media/public/".length());
         }
         int apiMedia = s.indexOf("/api/media/");
         if (apiMedia >= 0) {

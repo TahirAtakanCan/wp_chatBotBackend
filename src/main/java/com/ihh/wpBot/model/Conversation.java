@@ -34,6 +34,10 @@ public class Conversation {
     @Column(name = "last_message_text", length = 500)
     private String lastMessageText;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "last_message_type", length = 32)
+    private MessageType lastMessageType;
+
     @Column(name = "unread_count", nullable = false)
     private int unreadCount = 0;
 
@@ -113,6 +117,14 @@ public class Conversation {
 
     public void setLastMessageText(String lastMessageText) {
         this.lastMessageText = lastMessageText;
+    }
+
+    public MessageType getLastMessageType() {
+        return lastMessageType;
+    }
+
+    public void setLastMessageType(MessageType lastMessageType) {
+        this.lastMessageType = lastMessageType;
     }
 
     public int getUnreadCount() {

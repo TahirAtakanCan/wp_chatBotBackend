@@ -28,8 +28,8 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -90,7 +90,8 @@ class WebhookEventServiceTest {
                 messageRepository,
                 deliveryRecordRepository,
                 NOOP_TX_MANAGER,
-                APP_ZONE
+                APP_ZONE,
+                createMediaServiceMock()
         );
 
         String payload = """
@@ -155,7 +156,8 @@ class WebhookEventServiceTest {
                 messageRepository,
                 deliveryRecordRepository,
                 NOOP_TX_MANAGER,
-                APP_ZONE
+                APP_ZONE,
+                createMediaServiceMock()
         );
 
         LocalDateTime before = LocalDateTime.now(APP_ZONE);
@@ -210,7 +212,8 @@ class WebhookEventServiceTest {
                 messageRepository,
                 deliveryRecordRepository,
                 NOOP_TX_MANAGER,
-                APP_ZONE
+                APP_ZONE,
+                createMediaServiceMock()
         );
 
         LocalDateTime before = LocalDateTime.now(APP_ZONE);
@@ -267,7 +270,8 @@ class WebhookEventServiceTest {
                 messageRepository,
                 deliveryRecordRepository,
                 NOOP_TX_MANAGER,
-                APP_ZONE
+                APP_ZONE,
+                createMediaServiceMock()
         );
 
         String payload = """
@@ -325,7 +329,8 @@ class WebhookEventServiceTest {
                 messageRepository,
                 deliveryRecordRepository,
                 NOOP_TX_MANAGER,
-                APP_ZONE
+                APP_ZONE,
+                createMediaServiceMock()
         );
 
         String payload = """
@@ -392,7 +397,8 @@ class WebhookEventServiceTest {
                 messageRepository,
                 deliveryRecordRepository,
                 NOOP_TX_MANAGER,
-                APP_ZONE
+                APP_ZONE,
+                createMediaServiceMock()
         );
 
         String payloadNoContacts = """
@@ -448,7 +454,8 @@ class WebhookEventServiceTest {
                 messageRepository,
                 deliveryRecordRepository,
                 NOOP_TX_MANAGER,
-                APP_ZONE
+                APP_ZONE,
+                createMediaServiceMock()
         );
 
         String payload = """
@@ -477,6 +484,74 @@ class WebhookEventServiceTest {
         assertEquals("131049", deliveryRecord.getFailureCode());
         assertEquals("Message failed due to quality issues", deliveryRecord.getFailureReason());
         assertNotNull(deliveryRecord.getFailedAt());
+    }
+
+    @Test
+    void saveIncomingPayload_imageMessage_storesCaptionAndMediaFields_withoutMediaPlaceholder() {
+        WebhookEventRepository webhookEventRepository = mock(WebhookEventRepository.class);
+        ConversationRepository conversationRepository = mock(ConversationRepository.class);
+        MessageRepository messageRepository = mock(MessageRepository.class);
+        DeliveryRecordRepository deliveryRecordRepository = mock(DeliveryRecordRepository.class);
+        WhatsAppMediaService mediaService = mock(WhatsAppMediaService.class);
+
+        when(webhookEventRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(conversationRepository.findByPhoneNumber(any())).thenReturn(Optional.empty());
+        when(conversationRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(messageRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(mediaService.downloadIncomingMedia("media-123")).thenReturn(
+                Optional.of(new WhatsAppMediaService.StoredMedia("uploads/inbound/media-123.jpg", "image/jpeg"))
+        );
+
+        WebhookEventService service = new WebhookEventService(
+                webhookEventRepository,
+                new ObjectMapper(),
+                conversationRepository,
+                messageRepository,
+                deliveryRecordRepository,
+                NOOP_TX_MANAGER,
+                APP_ZONE,
+                mediaService
+        );
+
+        String payload = """
+                {
+                  "entry": [{
+                    "changes": [{
+                      "value": {
+                        "messages": [{
+                          "from": "905071610354",
+                          "id": "wamid.image.test",
+                          "timestamp": "1714999400",
+                          "type": "image",
+                          "image": {
+                            "id": "media-123",
+                            "mime_type": "image/jpeg",
+                            "caption": "Merhaba 😊"
+                          }
+                        }]
+                      }
+                    }]
+                  }]
+                }
+                """;
+
+        service.saveIncomingPayload(payload);
+
+        ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
+        verify(messageRepository, times(1)).save(messageCaptor.capture());
+        Message saved = messageCaptor.getValue();
+
+        assertEquals("Merhaba 😊", saved.getContent());
+        assertEquals("Merhaba 😊", saved.getCaption());
+        assertEquals("media-123", saved.getMediaId());
+        assertEquals("/api/media/media-123", saved.getMediaUrl());
+        assertEquals("image/jpeg", saved.getMimeType());
+        assertEquals("uploads/inbound/media-123.jpg", saved.getMediaStoragePath());
+        assertTrue(!"[medya]".equals(saved.getContent()));
+    }
+
+    private WhatsAppMediaService createMediaServiceMock() {
+        return mock(WhatsAppMediaService.class);
     }
 }
 

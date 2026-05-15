@@ -1,6 +1,9 @@
 package com.ihh.wpBot.controller;
 
+import com.ihh.wpBot.model.Message;
+import com.ihh.wpBot.repository.MessageRepository;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.PathResource;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpEntity;
@@ -32,9 +35,12 @@ public class MediaController {
     @Value("${app.server.url}")
     private String serverBaseUrl;
 
+    private final MessageRepository messageRepository;
+
     private final String UPLOAD_DIR = "uploads/";
 
-    public MediaController() {
+    public MediaController(MessageRepository messageRepository) {
+        this.messageRepository = messageRepository;
         File dir = new File(UPLOAD_DIR);
         if (!dir.exists()) {
             dir.mkdirs(); 
@@ -81,18 +87,50 @@ public class MediaController {
 
     @GetMapping("/{filename}")
     public ResponseEntity<Resource> getMedia(@PathVariable String filename) {
+        var storedMessageOpt = messageRepository.findTopByMediaIdOrderBySentAtDesc(filename);
+        if (storedMessageOpt.isPresent()) {
+            ResponseEntity<Resource> storedResponse = buildStoredMessageResponse(storedMessageOpt.get());
+            if (storedResponse.getStatusCode().is2xxSuccessful()) {
+                return storedResponse;
+            }
+        }
+
         try {
             Path file = Paths.get(UPLOAD_DIR).resolve(filename);
             Resource resource = new UrlResource(file.toUri());
             if (resource.exists() || resource.isReadable()) {
+                String mimeType = Files.probeContentType(file);
+                MediaType mediaType = resolveMediaType(mimeType);
                 return ResponseEntity.ok()
-                        .contentType(MediaType.IMAGE_JPEG) 
+                        .contentType(mediaType)
                         .body(resource);
             } else {
                 return ResponseEntity.notFound().build();
             }
         } catch (MalformedURLException e) {
             return ResponseEntity.badRequest().build();
+        } catch (IOException e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    @GetMapping("/public/{filename}")
+    public ResponseEntity<Resource> getPublicMedia(@PathVariable String filename) {
+        try {
+            Path file = Paths.get(UPLOAD_DIR).resolve(filename);
+            Resource resource = new UrlResource(file.toUri());
+            if (!(resource.exists() || resource.isReadable())) {
+                return ResponseEntity.notFound().build();
+            }
+            String mimeType = Files.probeContentType(file);
+            MediaType mediaType = resolveMediaType(mimeType);
+            return ResponseEntity.ok()
+                    .contentType(mediaType)
+                    .body(resource);
+        } catch (MalformedURLException e) {
+            return ResponseEntity.badRequest().build();
+        } catch (IOException e) {
+            return ResponseEntity.internalServerError().build();
         }
     }
 
@@ -114,6 +152,32 @@ public class MediaController {
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                     .body(Collections.singletonMap("error",
                             "Node.js servisine bağlanılamadı: " + e.getMessage()));
+        }
+    }
+
+    private ResponseEntity<Resource> buildStoredMessageResponse(Message message) {
+        if (message.getMediaStoragePath() == null || message.getMediaStoragePath().isBlank()) {
+            return ResponseEntity.notFound().build();
+        }
+        Path path = Path.of(message.getMediaStoragePath());
+        if (!Files.exists(path) || !Files.isReadable(path)) {
+            return ResponseEntity.notFound().build();
+        }
+        Resource resource = new PathResource(path);
+        return ResponseEntity.ok()
+                .contentType(resolveMediaType(message.getMimeType()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + path.getFileName() + "\"")
+                .body(resource);
+    }
+
+    private MediaType resolveMediaType(String mimeType) {
+        if (mimeType == null || mimeType.isBlank()) {
+            return MediaType.APPLICATION_OCTET_STREAM;
+        }
+        try {
+            return MediaType.parseMediaType(mimeType);
+        } catch (Exception ignored) {
+            return MediaType.APPLICATION_OCTET_STREAM;
         }
     }
 }

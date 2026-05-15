@@ -34,6 +34,21 @@ public class Message {
     @Column(name = "content", length = 4000)
     private String content;
 
+    @Column(name = "caption", length = 4000)
+    private String caption;
+
+    @Column(name = "media_id", length = 128)
+    private String mediaId;
+
+    @Column(name = "media_url", length = 512)
+    private String mediaUrl;
+
+    @Column(name = "mime_type", length = 128)
+    private String mimeType;
+
+    @Column(name = "media_storage_path", length = 1024)
+    private String mediaStoragePath;
+
     @Column(name = "wa_message_id", length = 128)
     private String waMessageId;
 
@@ -93,6 +108,46 @@ public class Message {
 
     public void setWaMessageId(String waMessageId) {
         this.waMessageId = waMessageId;
+    }
+
+    public String getCaption() {
+        return caption;
+    }
+
+    public void setCaption(String caption) {
+        this.caption = caption;
+    }
+
+    public String getMediaId() {
+        return mediaId;
+    }
+
+    public void setMediaId(String mediaId) {
+        this.mediaId = mediaId;
+    }
+
+    public String getMediaUrl() {
+        return mediaUrl;
+    }
+
+    public void setMediaUrl(String mediaUrl) {
+        this.mediaUrl = mediaUrl;
+    }
+
+    public String getMimeType() {
+        return mimeType;
+    }
+
+    public void setMimeType(String mimeType) {
+        this.mimeType = mimeType;
+    }
+
+    public String getMediaStoragePath() {
+        return mediaStoragePath;
+    }
+
+    public void setMediaStoragePath(String mediaStoragePath) {
+        this.mediaStoragePath = mediaStoragePath;
     }
 
     public LocalDateTime getSentAt() {
