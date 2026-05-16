@@ -1,6 +1,7 @@
 package com.ihh.wpBot.controller;
 
 import com.ihh.wpBot.model.MediaRequest;
+import com.ihh.wpBot.model.BulkMediaType;
 import com.ihh.wpBot.model.ResumeSendRequest;
 import com.ihh.wpBot.model.SendRequest;
 import com.ihh.wpBot.model.SendSession;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -52,11 +54,26 @@ public class SendController {
             SendSession session = sendingService.createSession(cleanedNumbers.size());
 
             List<String> mediaUrls = new ArrayList<>();
+            String mediaFilename = request.getFilename();
+            BulkMediaType mediaType = request.getMediaType();
             if (request.getMedia() != null && !request.getMedia().isEmpty()) {
                 for (MediaRequest m : request.getMedia()) {
                     String safeUrl = m.getUrl()
                             .replace("94.130.231.165", "localhost");
                     mediaUrls.add(safeUrl);
+                    if ((mediaFilename == null || mediaFilename.isBlank()) && m.getFileName() != null && !m.getFileName().isBlank()) {
+                        mediaFilename = m.getFileName();
+                    }
+                    if (mediaType == null) {
+                        mediaType = mapMediaType(m.getType());
+                    }
+                }
+            }
+            if (mediaUrls.isEmpty()) {
+                if (request.getMediaUrl() != null && !request.getMediaUrl().isBlank()) {
+                    mediaUrls.add(request.getMediaUrl());
+                } else if (request.getImageUrl() != null && !request.getImageUrl().isBlank()) {
+                    mediaUrls.add(request.getImageUrl());
                 }
             }
 
@@ -73,6 +90,8 @@ public class SendController {
                     request.getMinDelay(),
                     request.getMaxDelay(),
                     mediaUrls,
+                    mediaType,
+                    mediaFilename,
                     personalizedMessages,
                     request.isPersonalized()  // Lombok bunu otomatik üretiyor ✅
             );
@@ -145,6 +164,8 @@ public class SendController {
                     cleanedNumbers,
                     request.getTemplateName(),
                     mediaPaths,
+                    BulkMediaType.IMAGE,
+                    null,
                     request.isPersonalized()
             );
 
@@ -159,5 +180,17 @@ public class SendController {
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
+    }
+
+    private BulkMediaType mapMediaType(String mediaTypeRaw) {
+        if (mediaTypeRaw == null || mediaTypeRaw.isBlank()) {
+            return BulkMediaType.IMAGE;
+        }
+        String normalized = mediaTypeRaw.trim().toUpperCase(Locale.ROOT);
+        return switch (normalized) {
+            case "VIDEO" -> BulkMediaType.VIDEO;
+            case "DOCUMENT", "DOC", "FILE" -> BulkMediaType.DOCUMENT;
+            default -> BulkMediaType.IMAGE;
+        };
     }
 }

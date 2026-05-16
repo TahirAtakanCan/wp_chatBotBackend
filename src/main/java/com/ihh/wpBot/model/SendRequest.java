@@ -10,6 +10,10 @@ public class SendRequest {
     private List<String> phoneNumbers;
     private String message;
     private List<String> personalizedMessages;
+    private String imageUrl;
+    private String mediaUrl;
+    private BulkMediaType mediaType;
+    private String filename;
 
     @JsonProperty("isPersonalized")  // Jackson'a "isPersonalized" olarak oku de
     private boolean personalized;    // field adı artık "personalized" — Lombok setPersonalized() üretir

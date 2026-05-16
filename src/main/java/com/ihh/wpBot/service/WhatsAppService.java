@@ -351,6 +351,124 @@ public class WhatsAppService {
         return waMessageId;
     }
 
+    public String sendVideoTemplateMessage(String toPhoneNumber, String templateName,
+                                           String languageCode, String videoUrl,
+                                           List<String> bodyParameters) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("messaging_product", "whatsapp");
+        body.put("to", toPhoneNumber);
+        body.put("type", "template");
+
+        Map<String, Object> templateMap = new HashMap<>();
+        templateMap.put("name", templateName);
+
+        Map<String, Object> languageMap = new HashMap<>();
+        languageMap.put("code", languageCode);
+        templateMap.put("language", languageMap);
+
+        Map<String, Object> videoObj = new HashMap<>();
+        videoObj.put("link", videoUrl);
+
+        Map<String, Object> videoHeader = new HashMap<>();
+        videoHeader.put("type", "video");
+        videoHeader.put("video", videoObj);
+
+        List<Map<String, Object>> headerParameters = new ArrayList<>();
+        headerParameters.add(videoHeader);
+
+        Map<String, Object> headerComponent = new HashMap<>();
+        headerComponent.put("type", "header");
+        headerComponent.put("parameters", headerParameters);
+
+        ArrayList<Map<String, Object>> components = new ArrayList<>();
+        components.add(headerComponent);
+
+        if (bodyParameters != null && !bodyParameters.isEmpty()) {
+            List<Map<String, Object>> bodyParams = new ArrayList<>();
+            for (String parameter : bodyParameters) {
+                Map<String, Object> textParameter = new HashMap<>();
+                textParameter.put("type", "text");
+                textParameter.put("text", parameter);
+                bodyParams.add(textParameter);
+            }
+
+            Map<String, Object> bodyComponent = new HashMap<>();
+            bodyComponent.put("type", "body");
+            bodyComponent.put("parameters", bodyParams);
+            components.add(bodyComponent);
+        }
+
+        templateMap.put("components", components);
+        body.put("template", templateMap);
+
+        Map<String, Object> response = postMessageRequest(body);
+        String waMessageId = extractWaMessageId(response);
+        log.info("Video template message sent, waMessageId={}", waMessageId);
+        return waMessageId;
+    }
+
+    public String sendDocumentTemplateMessage(String toPhoneNumber, String templateName,
+                                              String languageCode, String documentUrl,
+                                              String filename,
+                                              List<String> bodyParameters) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("messaging_product", "whatsapp");
+        body.put("to", toPhoneNumber);
+        body.put("type", "template");
+
+        Map<String, Object> templateMap = new HashMap<>();
+        templateMap.put("name", templateName);
+
+        Map<String, Object> languageMap = new HashMap<>();
+        languageMap.put("code", languageCode);
+        templateMap.put("language", languageMap);
+
+        Map<String, Object> documentObj = new HashMap<>();
+        documentObj.put("link", documentUrl);
+        if (filename != null && !filename.isBlank()) {
+            documentObj.put("filename", filename.length() > MAX_DOCUMENT_FILENAME_LENGTH
+                    ? filename.substring(0, MAX_DOCUMENT_FILENAME_LENGTH)
+                    : filename);
+        }
+
+        Map<String, Object> documentHeader = new HashMap<>();
+        documentHeader.put("type", "document");
+        documentHeader.put("document", documentObj);
+
+        List<Map<String, Object>> headerParameters = new ArrayList<>();
+        headerParameters.add(documentHeader);
+
+        Map<String, Object> headerComponent = new HashMap<>();
+        headerComponent.put("type", "header");
+        headerComponent.put("parameters", headerParameters);
+
+        ArrayList<Map<String, Object>> components = new ArrayList<>();
+        components.add(headerComponent);
+
+        if (bodyParameters != null && !bodyParameters.isEmpty()) {
+            List<Map<String, Object>> bodyParams = new ArrayList<>();
+            for (String parameter : bodyParameters) {
+                Map<String, Object> textParameter = new HashMap<>();
+                textParameter.put("type", "text");
+                textParameter.put("text", parameter);
+                bodyParams.add(textParameter);
+            }
+
+            Map<String, Object> bodyComponent = new HashMap<>();
+            bodyComponent.put("type", "body");
+            bodyComponent.put("parameters", bodyParams);
+            components.add(bodyComponent);
+        }
+
+        templateMap.put("components", components);
+        body.put("template", templateMap);
+
+        Map<String, Object> response = postMessageRequest(body);
+        String waMessageId = extractWaMessageId(response);
+        log.info("Document template message sent, waMessageId={}", waMessageId);
+        return waMessageId;
+    }
+
     public String sendContactCard(String toPhoneNumber) {
         String metaPhone = toPhoneNumber == null ? null : toPhoneNumber.trim();
         if (metaPhone != null && metaPhone.startsWith("+")) {

@@ -473,8 +473,8 @@ public class ConversationController {
 
     @GetMapping("/messages/{messageId}/media")
     public ResponseEntity<Resource> getMessageMedia(@PathVariable Long messageId) {
-        return messageRepository.findByIdAndMediaStoragePathIsNotNull(messageId)
-                .map(this::mediaResponse)
+        return messageRepository.findById(messageId)
+                .map(this::resolveMediaResponse)
                 .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).build());
     }
 
@@ -522,6 +522,55 @@ public class ConversationController {
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
+    }
+
+    private ResponseEntity<Resource> resolveMediaResponse(Message message) {
+        if (message.getMediaStoragePath() != null && !message.getMediaStoragePath().isBlank()) {
+            return mediaResponse(message);
+        }
+        try {
+            String uploadFilename = resolveUploadFilename(message);
+            if (uploadFilename == null || uploadFilename.isBlank()) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+            }
+            Path path = Path.of("uploads").resolve(uploadFilename).normalize();
+            if (!Files.exists(path) || !Files.isReadable(path)) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+            }
+            Resource resource = new PathResource(path);
+            MediaType mediaType = resolveMediaType(message.getMimeType());
+            return ResponseEntity.ok()
+                    .contentType(mediaType)
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + path.getFileName() + "\"")
+                    .body(resource);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    private String resolveUploadFilename(Message message) {
+        if (message.getMediaId() != null && !message.getMediaId().isBlank()) {
+            return message.getMediaId().trim();
+        }
+        String mediaUrl = message.getMediaUrl();
+        if (mediaUrl == null || mediaUrl.isBlank()) {
+            return null;
+        }
+        String normalizedUrl = mediaUrl.trim();
+        int queryIndex = normalizedUrl.indexOf('?');
+        if (queryIndex >= 0) {
+            normalizedUrl = normalizedUrl.substring(0, queryIndex);
+        }
+        int marker = normalizedUrl.lastIndexOf("/api/media/public/");
+        if (marker >= 0) {
+            String filePart = normalizedUrl.substring(marker + "/api/media/public/".length());
+            return filePart.isBlank() ? null : filePart;
+        }
+        int lastSlash = normalizedUrl.lastIndexOf('/');
+        if (lastSlash >= 0 && lastSlash + 1 < normalizedUrl.length()) {
+            return normalizedUrl.substring(lastSlash + 1);
+        }
+        return null;
     }
 
     private MediaType resolveMediaType(String mimeType) {

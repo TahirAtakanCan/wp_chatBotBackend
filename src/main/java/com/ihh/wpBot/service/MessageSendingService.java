@@ -1,6 +1,7 @@
 package com.ihh.wpBot.service;
 
 import com.ihh.wpBot.model.Contact;
+import com.ihh.wpBot.model.BulkMediaType;
 import com.ihh.wpBot.model.Conversation;
 import com.ihh.wpBot.model.DeliveryRecord;
 import com.ihh.wpBot.model.DeliveryStatus;
@@ -85,6 +86,8 @@ public class MessageSendingService {
             int minDelay,
             int maxDelay,
             List<String> mediaPaths,
+            BulkMediaType mediaType,
+            String mediaFilename,
             List<String> personalizedMessages,
             boolean isPersonalized
     ) {
@@ -95,7 +98,7 @@ public class MessageSendingService {
         session.setStatus(SendStatus.SENDING);
         session.addLog(getFormattedTime() + " [SİSTEM] Meta API'ye bağlanılıyor...");
 
-        runSendingLoop(session, phoneNumbers, templateName, mediaPaths, personalizedMessages);
+        runSendingLoop(session, phoneNumbers, templateName, mediaPaths, mediaType, mediaFilename, personalizedMessages);
     }
 
     @Async
@@ -105,6 +108,8 @@ public class MessageSendingService {
             List<String> phoneNumbers,
             String templateName,
             List<String> mediaPaths,
+            BulkMediaType mediaType,
+            String mediaFilename,
             boolean isPersonalized
     ) {
         SendSession session = activeSessions.get(sessionId);
@@ -123,7 +128,7 @@ public class MessageSendingService {
         session.addLog(getFormattedTime()
                 + " [SİSTEM] RATE_LIMITED oturumu kaldığı yerden devam ettiriliyor...");
 
-        runSendingLoop(session, phoneNumbers, templateName, mediaPaths, null);
+        runSendingLoop(session, phoneNumbers, templateName, mediaPaths, mediaType, mediaFilename, null);
     }
 
     private void runSendingLoop(
@@ -131,6 +136,8 @@ public class MessageSendingService {
             List<String> phoneNumbers,
             String templateName,
             List<String> mediaPaths,
+            BulkMediaType mediaType,
+            String mediaFilename,
             List<String> personalizedMessages
     ) {
 
@@ -146,13 +153,16 @@ public class MessageSendingService {
                 try {
                     String templateWaId;
                     if (mediaPaths != null && !mediaPaths.isEmpty()) {
-                        String filename = extractFilename(mediaPaths.get(0));
-                        String base = publicUrl.endsWith("/")
-                                ? publicUrl.substring(0, publicUrl.length() - 1)
-                                : publicUrl;
-                        String imageUrl = base + "/api/media/public/" + filename;
-                        templateWaId = whatsAppService.sendImageTemplateMessage(
-                                phone, templateName, "tr", imageUrl, bodyParameters);
+                        String mediaUrl = resolveTemplateMediaUrl(mediaPaths.get(0));
+                        BulkMediaType effectiveType = mediaType != null ? mediaType : BulkMediaType.IMAGE;
+                        templateWaId = switch (effectiveType) {
+                            case VIDEO -> whatsAppService.sendVideoTemplateMessage(
+                                    phone, templateName, "tr", mediaUrl, bodyParameters);
+                            case DOCUMENT -> whatsAppService.sendDocumentTemplateMessage(
+                                    phone, templateName, "tr", mediaUrl, mediaFilename, bodyParameters);
+                            case IMAGE -> whatsAppService.sendImageTemplateMessage(
+                                    phone, templateName, "tr", mediaUrl, bodyParameters);
+                        };
                     } else {
                         templateWaId = whatsAppService.sendTemplateMessage(phone, templateName, "tr", bodyParameters);
                     }
@@ -236,6 +246,30 @@ public class MessageSendingService {
         }
         int lastSlash = s.lastIndexOf('/');
         return lastSlash >= 0 ? s.substring(lastSlash + 1) : s;
+    }
+
+    private String resolveTemplateMediaUrl(String mediaPathOrUrl) {
+        if (mediaPathOrUrl == null || mediaPathOrUrl.isBlank()) {
+            return mediaPathOrUrl;
+        }
+        String trimmed = mediaPathOrUrl.trim();
+        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+            if (trimmed.contains("/api/media/public/") || trimmed.contains("/api/media/")) {
+                String filename = extractFilename(trimmed);
+                return normalizeBaseUrl(publicUrl) + "/api/media/public/" + filename;
+            }
+            return trimmed;
+        }
+        String filename = extractFilename(trimmed);
+        return normalizeBaseUrl(publicUrl) + "/api/media/public/" + filename;
+    }
+
+    private String normalizeBaseUrl(String url) {
+        if (url == null || url.isBlank()) {
+            return "";
+        }
+        String trimmed = url.trim();
+        return trimmed.endsWith("/") ? trimmed.substring(0, trimmed.length() - 1) : trimmed;
     }
 
     private void createDeliveryRecordSafely(SendSession session, String phone, String templateName, String templateWaId) {
