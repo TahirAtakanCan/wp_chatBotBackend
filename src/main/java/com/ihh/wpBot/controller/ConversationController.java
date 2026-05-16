@@ -14,6 +14,8 @@ import com.ihh.wpBot.model.MessageType;
 import com.ihh.wpBot.repository.ConversationRepository;
 import com.ihh.wpBot.repository.MessageRepository;
 import com.ihh.wpBot.service.WhatsAppService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.io.PathResource;
 import org.springframework.core.io.Resource;
 import org.springframework.data.domain.Page;
@@ -35,6 +37,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Optional;
 import java.nio.file.Path;
@@ -43,6 +46,7 @@ import java.nio.file.Files;
 @RestController
 @RequestMapping("/api/conversations")
 public class ConversationController {
+    private static final Logger log = LoggerFactory.getLogger(ConversationController.class);
 
     private final ConversationRepository conversationRepository;
     private final MessageRepository messageRepository;
@@ -102,6 +106,15 @@ public class ConversationController {
             @PathVariable Long id,
             @RequestBody ReplyRequest request
     ) {
+        String rawText = request != null ? request.text() : null;
+        log.info("[REPLY DEBUG] conversationId={}, text=[{}], length={}, codePoints={}, bytesHex={}",
+                id,
+                rawText,
+                rawText == null ? -1 : rawText.length(),
+                rawText == null ? -1 : rawText.codePointCount(0, rawText.length()),
+                rawText == null ? "null" : bytesToHex(rawText.getBytes(StandardCharsets.UTF_8))
+        );
+
         Conversation conversation = conversationRepository.findById(id).orElse(null);
         if (conversation == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
@@ -138,6 +151,10 @@ public class ConversationController {
         message.setWaMessageId(waMessageId);
         message.setSentAt(now);
         message.setStatus(MessageStatus.SENT);
+        log.info("[DB DEBUG] Message will be saved with content=[{}], length={}",
+                message.getContent(),
+                message.getContent() == null ? -1 : message.getContent().length()
+        );
         Message savedMessage = messageRepository.save(message);
 
         conversation.setLastMessageAt(now);
@@ -399,6 +416,14 @@ public class ConversationController {
             suffix = suffix.substring("public/".length());
         }
         return suffix.isBlank() ? null : suffix;
+    }
+
+    private static String bytesToHex(byte[] bytes) {
+        StringBuilder sb = new StringBuilder();
+        for (byte b : bytes) {
+            sb.append(String.format("%02x ", b));
+        }
+        return sb.toString().trim();
     }
 }
 
