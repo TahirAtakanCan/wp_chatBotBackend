@@ -43,6 +43,9 @@ public class Message {
     @Column(name = "media_url", length = 512)
     private String mediaUrl;
 
+    @Column(name = "media_filename", length = 240)
+    private String mediaFilename;
+
     @Column(name = "mime_type", length = 128)
     private String mimeType;
 
@@ -132,6 +135,14 @@ public class Message {
 
     public void setMediaUrl(String mediaUrl) {
         this.mediaUrl = mediaUrl;
+    }
+
+    public String getMediaFilename() {
+        return mediaFilename;
+    }
+
+    public void setMediaFilename(String mediaFilename) {
+        this.mediaFilename = mediaFilename;
     }
 
     public String getMimeType() {

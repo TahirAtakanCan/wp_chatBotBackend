@@ -51,5 +51,45 @@ class WhatsAppServiceTest {
 
         server.verify();
     }
+
+    @Test
+    void sendVideoMessage_callsMetaMessagesEndpointWithVideoType() {
+        RestTemplate restTemplate = new RestTemplate();
+        MockRestServiceServer server = MockRestServiceServer.createServer(restTemplate);
+
+        WhatsAppService service = new WhatsAppService(restTemplate);
+        ReflectionTestUtils.setField(service, "phoneId", "1234567890");
+        ReflectionTestUtils.setField(service, "accessToken", "TEST_TOKEN");
+
+        server.expect(requestTo("https://graph.facebook.com/v18.0/1234567890/messages"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"type\":\"video\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"caption\":\"video caption\"")))
+                .andRespond(withSuccess("{\"messages\":[{\"id\":\"wamid.video.test\"}]}", MediaType.APPLICATION_JSON));
+
+        service.sendVideoMessage("905551234567", "https://example.com/video.mp4", "video caption");
+
+        server.verify();
+    }
+
+    @Test
+    void sendDocumentMessage_callsMetaMessagesEndpointWithDocumentTypeAndFilename() {
+        RestTemplate restTemplate = new RestTemplate();
+        MockRestServiceServer server = MockRestServiceServer.createServer(restTemplate);
+
+        WhatsAppService service = new WhatsAppService(restTemplate);
+        ReflectionTestUtils.setField(service, "phoneId", "1234567890");
+        ReflectionTestUtils.setField(service, "accessToken", "TEST_TOKEN");
+
+        server.expect(requestTo("https://graph.facebook.com/v18.0/1234567890/messages"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"type\":\"document\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"filename\":\"guide.pdf\"")))
+                .andRespond(withSuccess("{\"messages\":[{\"id\":\"wamid.document.test\"}]}", MediaType.APPLICATION_JSON));
+
+        service.sendDocumentMessage("905551234567", "https://example.com/guide.pdf", "guide.pdf", "doc caption");
+
+        server.verify();
+    }
 }
 

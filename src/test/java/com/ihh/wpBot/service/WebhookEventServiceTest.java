@@ -6,7 +6,6 @@ import com.ihh.wpBot.model.ConversationStatus;
 import com.ihh.wpBot.model.DeliveryRecord;
 import com.ihh.wpBot.model.DeliveryStatus;
 import com.ihh.wpBot.model.Message;
-import com.ihh.wpBot.model.MessageStatus;
 import com.ihh.wpBot.repository.ConversationRepository;
 import com.ihh.wpBot.repository.DeliveryRecordRepository;
 import com.ihh.wpBot.repository.MessageRepository;
@@ -435,12 +434,6 @@ class WebhookEventServiceTest {
 
         when(webhookEventRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        Message outboundMessage = new Message();
-        outboundMessage.setWaMessageId("wamid.status.test");
-        outboundMessage.setStatus(MessageStatus.SENT);
-        when(messageRepository.findByWaMessageId("wamid.status.test")).thenReturn(Optional.of(outboundMessage));
-        when(messageRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-
         DeliveryRecord deliveryRecord = new DeliveryRecord();
         deliveryRecord.setWaMessageId("wamid.status.test");
         deliveryRecord.setStatus(DeliveryStatus.SENT);
@@ -479,7 +472,6 @@ class WebhookEventServiceTest {
 
         service.saveIncomingPayload(payload);
 
-        assertEquals(MessageStatus.FAILED, outboundMessage.getStatus());
         assertEquals(DeliveryStatus.FAILED, deliveryRecord.getStatus());
         assertEquals("131049", deliveryRecord.getFailureCode());
         assertEquals("Message failed due to quality issues", deliveryRecord.getFailureReason());

@@ -333,6 +333,10 @@ public class WebhookEventService {
         if (mimeType != null && !mimeType.isBlank()) {
             inbound.setMimeType(mimeType);
         }
+        String filename = mediaNode.path("filename").asText(null);
+        if (filename != null && !filename.isBlank()) {
+            inbound.setMediaFilename(filename);
+        }
 
         whatsAppMediaService.downloadIncomingMedia(mediaId).ifPresent(storedMedia -> {
             inbound.setMediaStoragePath(storedMedia.storagePath());

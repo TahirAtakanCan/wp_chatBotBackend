@@ -19,6 +19,8 @@ import java.util.Map;
 public class WhatsAppService {
 
     private static final Logger log = LoggerFactory.getLogger(WhatsAppService.class);
+    private static final int MAX_CAPTION_LENGTH = 1024;
+    private static final int MAX_DOCUMENT_FILENAME_LENGTH = 240;
 
     @Value("${meta.phone.id}")
     private String phoneId;
@@ -137,6 +139,108 @@ public class WhatsAppService {
 
         String waMessageId = extractWaMessageId(response);
         log.info("Image message sent, waMessageId={}", waMessageId);
+        return waMessageId;
+    }
+
+    /**
+     * WhatsApp Cloud API ile inline video mesaj gönderir.
+     * Alıcının telefonunda direkt oynar, indirme gerektirmez.
+     * Meta limiti: 16 MB. Üstü için sendDocumentMessage kullan.
+     *
+     * @param toPhoneNumber Alıcı (905XXX formatında, "+" varsa atılır)
+     * @param videoUrl      Public erişilebilir URL (Meta indirir)
+     * @param caption       Opsiyonel açıklama (max 1024 char)
+     * @return waMessageId Meta'nın döndüğü mesaj ID
+     */
+    public String sendVideoMessage(String toPhoneNumber, String videoUrl, String caption) {
+        String metaPhone = toPhoneNumber == null ? null : toPhoneNumber.trim();
+        if (metaPhone != null && metaPhone.startsWith("+")) {
+            metaPhone = metaPhone.substring(1);
+        }
+
+        log.info("Sending video message to {}, url={}", metaPhone, videoUrl);
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("messaging_product", "whatsapp");
+        body.put("to", metaPhone);
+        body.put("type", "video");
+
+        Map<String, Object> videoBody = new HashMap<>();
+        videoBody.put("link", videoUrl);
+        if (caption != null && !caption.isBlank()) {
+            String trimmed = caption.length() > MAX_CAPTION_LENGTH ? caption.substring(0, MAX_CAPTION_LENGTH) : caption;
+            videoBody.put("caption", trimmed);
+        }
+        body.put("video", videoBody);
+
+        Map<String, Object> response;
+        try {
+            response = postMessageRequest(body);
+        } catch (IllegalStateException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof HttpStatusCodeException httpEx && httpEx.getStatusCode().value() == 429) {
+                throw new IllegalStateException("RATE_LIMITED", e);
+            }
+            throw e;
+        }
+
+        String waMessageId = extractWaMessageId(response);
+        log.info("Video message sent, waMessageId={}", waMessageId);
+        return waMessageId;
+    }
+
+    /**
+     * WhatsApp Cloud API ile document mesaj gönderir.
+     * Telefonda dosya olarak görünür, kullanıcı indirip açar.
+     * Video, PDF, Word, Excel vb. her türlü dosya için kullanılır.
+     * Meta limiti: 100 MB.
+     *
+     * @param toPhoneNumber Alıcı
+     * @param documentUrl   Public erişilebilir URL
+     * @param filename      Dosya adı (telefonda gösterilir, max 240 char)
+     * @param caption       Opsiyonel açıklama (max 1024 char)
+     * @return waMessageId
+     */
+    public String sendDocumentMessage(String toPhoneNumber, String documentUrl, String filename, String caption) {
+        String metaPhone = toPhoneNumber == null ? null : toPhoneNumber.trim();
+        if (metaPhone != null && metaPhone.startsWith("+")) {
+            metaPhone = metaPhone.substring(1);
+        }
+
+        log.info("Sending document message to {}, url={}, filename={}", metaPhone, documentUrl, filename);
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("messaging_product", "whatsapp");
+        body.put("to", metaPhone);
+        body.put("type", "document");
+
+        Map<String, Object> documentBody = new HashMap<>();
+        documentBody.put("link", documentUrl);
+        if (filename != null && !filename.isBlank()) {
+            String trimmedFilename = filename.length() > MAX_DOCUMENT_FILENAME_LENGTH
+                    ? filename.substring(0, MAX_DOCUMENT_FILENAME_LENGTH)
+                    : filename;
+            documentBody.put("filename", trimmedFilename);
+        }
+        if (caption != null && !caption.isBlank()) {
+            String trimmedCaption = caption.length() > MAX_CAPTION_LENGTH ? caption.substring(0, MAX_CAPTION_LENGTH) : caption;
+            documentBody.put("caption", trimmedCaption);
+        }
+        body.put("document", documentBody);
+
+        Map<String, Object> response;
+        try {
+            response = postMessageRequest(body);
+        } catch (IllegalStateException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof HttpStatusCodeException httpEx && httpEx.getStatusCode().value() == 429) {
+                throw new IllegalStateException("RATE_LIMITED", e);
+            }
+            throw e;
+        }
+
+        String waMessageId = extractWaMessageId(response);
+        log.info("Document message sent, waMessageId={}", waMessageId);
         return waMessageId;
     }
 

@@ -67,11 +67,15 @@ public class MediaController {
             Files.copy(file.getInputStream(), targetPath, StandardCopyOption.REPLACE_EXISTING);
 
             String fileUrl = normalizeBaseUrl(publicUrl) + "/api/media/public/" + safeFilename;
+            long sizeBytes = file.getSize();
+            String contentType = file.getContentType() != null ? file.getContentType() : "application/octet-stream";
 
             return ResponseEntity.ok(Map.of(
                     "filename", safeFilename,
                     "url", fileUrl,
-                    "type", file.getContentType()
+                    "type", contentType,
+                    "size", sizeBytes,
+                    "sizeFormatted", formatSize(sizeBytes)
             ));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Collections.singletonMap("error", "Hata: " + e.getMessage()));
@@ -196,5 +200,18 @@ public class MediaController {
             return trimmed.substring(0, trimmed.length() - 1);
         }
         return trimmed;
+    }
+
+    private String formatSize(long bytes) {
+        if (bytes < 1024) {
+            return bytes + " B";
+        }
+        if (bytes < 1024L * 1024) {
+            return String.format("%.1f KB", bytes / 1024.0);
+        }
+        if (bytes < 1024L * 1024 * 1024) {
+            return String.format("%.1f MB", bytes / (1024.0 * 1024.0));
+        }
+        return String.format("%.1f GB", bytes / (1024.0 * 1024.0 * 1024.0));
     }
 }

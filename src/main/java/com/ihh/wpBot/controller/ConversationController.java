@@ -2,8 +2,9 @@ package com.ihh.wpBot.controller;
 
 import com.ihh.wpBot.controller.dto.ConversationDto;
 import com.ihh.wpBot.controller.dto.ErrorResponse;
-import com.ihh.wpBot.controller.dto.ImageReplyRequest;
 import com.ihh.wpBot.controller.dto.MessageDto;
+import com.ihh.wpBot.controller.dto.ReplyDocumentRequest;
+import com.ihh.wpBot.controller.dto.ReplyMediaRequest;
 import com.ihh.wpBot.controller.dto.ReplyRequest;
 import com.ihh.wpBot.model.Conversation;
 import com.ihh.wpBot.model.ConversationStatus;
@@ -43,6 +44,9 @@ import java.nio.file.Files;
 @RestController
 @RequestMapping("/api/conversations")
 public class ConversationController {
+    private static final long MAX_INLINE_VIDEO_BYTES = 16L * 1024 * 1024;
+    private static final long MAX_DOCUMENT_BYTES = 100L * 1024 * 1024;
+
     private final ConversationRepository conversationRepository;
     private final MessageRepository messageRepository;
     private final WhatsAppService whatsAppService;
@@ -151,7 +155,7 @@ public class ConversationController {
     @Transactional
     public ResponseEntity<?> replyImage(
             @PathVariable Long id,
-            @RequestBody ImageReplyRequest request
+            @RequestBody ReplyMediaRequest request
     ) {
         Conversation conversation = conversationRepository.findById(id).orElse(null);
         if (conversation == null) {
@@ -167,10 +171,10 @@ public class ConversationController {
             );
         }
 
-        String imageUrl = request.imageUrl();
+        String imageUrl = request.mediaUrl();
         if (imageUrl == null || imageUrl.isBlank()) {
             return ResponseEntity.badRequest().body(
-                    new ErrorResponse("IMAGE_URL_REQUIRED", "imageUrl zorunludur.")
+                    new ErrorResponse("IMAGE_URL_REQUIRED", "mediaUrl zorunludur.")
             );
         }
 
@@ -205,6 +209,157 @@ public class ConversationController {
         conversation.setLastMessageAt(now);
         conversation.setLastMessageType(MessageType.IMAGE);
         conversation.setLastMessageText("📷 Fotoğraf");
+        conversationRepository.save(conversation);
+
+        return ResponseEntity.ok(MessageDto.from(savedMessage));
+    }
+
+    @PostMapping("/{id}/reply-video")
+    @Transactional
+    public ResponseEntity<?> replyVideo(
+            @PathVariable Long id,
+            @RequestBody ReplyMediaRequest request
+    ) {
+        Conversation conversation = conversationRepository.findById(id).orElse(null);
+        if (conversation == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        }
+
+        if (!conversation.isReplyWindowOpen()) {
+            return ResponseEntity.unprocessableEntity().body(
+                    new ErrorResponse(
+                            "REPLY_WINDOW_CLOSED",
+                            "24 saatlik müşteri penceresi kapanmış. Yalnızca onaylı template gönderebilirsiniz."
+                    )
+            );
+        }
+
+        String videoUrl = request.mediaUrl();
+        if (videoUrl == null || videoUrl.isBlank()) {
+            return ResponseEntity.badRequest().body(
+                    new ErrorResponse("VIDEO_URL_REQUIRED", "mediaUrl zorunludur.")
+            );
+        }
+
+        Long sizeBytes = request.sizeBytes();
+        if (sizeBytes != null && sizeBytes >= MAX_INLINE_VIDEO_BYTES) {
+            return ResponseEntity.unprocessableEntity().body(
+                    new ErrorResponse("VIDEO_TOO_LARGE_FOR_INLINE", "16 MB üzerindeki videoları belge olarak gönderin.")
+            );
+        }
+
+        String waMessageId;
+        try {
+            waMessageId = whatsAppService.sendVideoMessage(conversation.getPhoneNumber(), videoUrl, request.caption());
+        } catch (IllegalStateException e) {
+            if ("RATE_LIMITED".equals(e.getMessage())) {
+                return ResponseEntity.status(429).body(ErrorResponse.of("RATE_LIMITED"));
+            }
+            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(
+                    new ErrorResponse("WHATSAPP_API_ERROR", e.getMessage())
+            );
+        }
+
+        LocalDateTime now = LocalDateTime.now(applicationZoneId);
+        String trimmedCaption = request.caption() != null ? request.caption().trim() : null;
+
+        Message message = new Message();
+        message.setConversation(conversation);
+        message.setDirection(MessageDirection.OUTBOUND);
+        message.setMessageType(MessageType.VIDEO);
+        message.setContent(trimmedCaption == null ? "" : trimmedCaption);
+        message.setCaption(trimmedCaption);
+        message.setMediaUrl(videoUrl.trim());
+        message.setMediaId(extractMediaIdFromUrl(videoUrl));
+        message.setWaMessageId(waMessageId);
+        message.setSentAt(now);
+        message.setStatus(MessageStatus.SENT);
+        Message savedMessage = messageRepository.save(message);
+
+        conversation.setLastMessageAt(now);
+        conversation.setLastMessageType(MessageType.VIDEO);
+        conversation.setLastMessageText("🎬 Video");
+        conversationRepository.save(conversation);
+
+        return ResponseEntity.ok(MessageDto.from(savedMessage));
+    }
+
+    @PostMapping("/{id}/reply-document")
+    @Transactional
+    public ResponseEntity<?> replyDocument(
+            @PathVariable Long id,
+            @RequestBody ReplyDocumentRequest request
+    ) {
+        Conversation conversation = conversationRepository.findById(id).orElse(null);
+        if (conversation == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        }
+
+        if (!conversation.isReplyWindowOpen()) {
+            return ResponseEntity.unprocessableEntity().body(
+                    new ErrorResponse(
+                            "REPLY_WINDOW_CLOSED",
+                            "24 saatlik müşteri penceresi kapanmış. Yalnızca onaylı template gönderebilirsiniz."
+                    )
+            );
+        }
+
+        String documentUrl = request.mediaUrl();
+        if (documentUrl == null || documentUrl.isBlank()) {
+            return ResponseEntity.badRequest().body(
+                    new ErrorResponse("DOCUMENT_URL_REQUIRED", "mediaUrl zorunludur.")
+            );
+        }
+        if (request.filename() == null || request.filename().isBlank()) {
+            return ResponseEntity.badRequest().body(
+                    new ErrorResponse("FILENAME_REQUIRED", "filename zorunludur.")
+            );
+        }
+
+        Long sizeBytes = request.sizeBytes();
+        if (sizeBytes != null && sizeBytes > MAX_DOCUMENT_BYTES) {
+            return ResponseEntity.unprocessableEntity().body(
+                    new ErrorResponse("DOCUMENT_TOO_LARGE", "100 MB üzerindeki dosyalar gönderilemez.")
+            );
+        }
+
+        String waMessageId;
+        try {
+            waMessageId = whatsAppService.sendDocumentMessage(
+                    conversation.getPhoneNumber(),
+                    documentUrl,
+                    request.filename(),
+                    request.caption()
+            );
+        } catch (IllegalStateException e) {
+            if ("RATE_LIMITED".equals(e.getMessage())) {
+                return ResponseEntity.status(429).body(ErrorResponse.of("RATE_LIMITED"));
+            }
+            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(
+                    new ErrorResponse("WHATSAPP_API_ERROR", e.getMessage())
+            );
+        }
+
+        LocalDateTime now = LocalDateTime.now(applicationZoneId);
+        String trimmedCaption = request.caption() != null ? request.caption().trim() : null;
+
+        Message message = new Message();
+        message.setConversation(conversation);
+        message.setDirection(MessageDirection.OUTBOUND);
+        message.setMessageType(MessageType.DOCUMENT);
+        message.setContent(trimmedCaption == null ? "" : trimmedCaption);
+        message.setCaption(trimmedCaption);
+        message.setMediaUrl(documentUrl.trim());
+        message.setMediaId(extractMediaIdFromUrl(documentUrl));
+        message.setMediaFilename(request.filename().trim());
+        message.setWaMessageId(waMessageId);
+        message.setSentAt(now);
+        message.setStatus(MessageStatus.SENT);
+        Message savedMessage = messageRepository.save(message);
+
+        conversation.setLastMessageAt(now);
+        conversation.setLastMessageType(MessageType.DOCUMENT);
+        conversation.setLastMessageText("📄 Belge");
         conversationRepository.save(conversation);
 
         return ResponseEntity.ok(MessageDto.from(savedMessage));
