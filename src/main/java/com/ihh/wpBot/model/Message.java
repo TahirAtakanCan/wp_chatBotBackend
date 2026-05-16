@@ -28,7 +28,7 @@ public class Message {
     private MessageDirection direction;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "message_type", nullable = false, length = 32)
+    @Column(name = "message_type", columnDefinition = "VARCHAR(32)", nullable = false, length = 32)
     private MessageType messageType;
 
     @Column(name = "content", length = 4000)

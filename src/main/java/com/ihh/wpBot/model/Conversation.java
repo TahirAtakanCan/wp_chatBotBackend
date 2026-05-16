@@ -35,7 +35,7 @@ public class Conversation {
     private String lastMessageText;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "last_message_type", length = 32)
+    @Column(name = "last_message_type", columnDefinition = "VARCHAR(32)", length = 32)
     private MessageType lastMessageType;
 
     @Column(name = "unread_count", nullable = false)
