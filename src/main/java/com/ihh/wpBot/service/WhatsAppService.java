@@ -10,7 +10,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
 
-import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.ArrayList;
 import java.util.List;
@@ -78,12 +77,6 @@ public class WhatsAppService {
             metaPhone = metaPhone.substring(1);
         }
 
-        log.info("[SEND DEBUG] toPhone={}, text=[{}], length={}, bytesHex={}",
-                toPhoneNumber,
-                text,
-                text == null ? -1 : text.length(),
-                text == null ? "null" : bytesToHex(text.getBytes(StandardCharsets.UTF_8))
-        );
         log.info("Sending text message to {}", metaPhone);
 
         Map<String, Object> body = new HashMap<>();
@@ -362,13 +355,5 @@ public class WhatsAppService {
             throw new IllegalStateException("Meta API response missing messages[0].id");
         }
         return id;
-    }
-
-    private static String bytesToHex(byte[] bytes) {
-        StringBuilder sb = new StringBuilder();
-        for (byte b : bytes) {
-            sb.append(String.format("%02x ", b));
-        }
-        return sb.toString().trim();
     }
 }
