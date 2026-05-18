@@ -7,6 +7,8 @@ import com.ihh.wpBot.model.SendRequest;
 import com.ihh.wpBot.model.SendSession;
 import com.ihh.wpBot.model.SendStatus;
 import com.ihh.wpBot.service.MessageSendingService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -23,6 +25,8 @@ import java.util.stream.Collectors;
 @PreAuthorize("isAuthenticated()")
 public class SendController {
 
+    private static final Logger log = LoggerFactory.getLogger(SendController.class);
+
     private final MessageSendingService sendingService;
 
     @Autowired
@@ -32,12 +36,20 @@ public class SendController {
 
     @PostMapping("/start")
     public ResponseEntity<?> startSending(@RequestBody SendRequest request) {
-        System.out.println("=== JAVA DEBUG ===");
-        System.out.println("isPersonalized: " + request.isPersonalized());
-        System.out.println("personalizedMessages: " + request.getPersonalizedMessages());
-        System.out.println("phoneNumbers: " + request.getPhoneNumbers());
-        System.out.println("message: " + request.getMessage());
-        System.out.println("==================");
+        String resolvedTemplate = request.getResolvedTemplateName();
+        if (resolvedTemplate == null || resolvedTemplate.isBlank()) {
+            log.warn("Bulk send rejected: templateName missing. sessionId={}", request.getSessionId());
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "TEMPLATE_NAME_REQUIRED",
+                    "message", "Şablon adı belirtilmelidir. Lütfen toplu gönderim için bir hazır kayıt seçin."
+            ));
+        }
+        if (request.getPhoneNumbers() == null || request.getPhoneNumbers().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "PHONE_NUMBERS_REQUIRED",
+                    "message", "En az bir telefon numarası belirtilmelidir."
+            ));
+        }
 
         try {
             List<String> cleanedNumbers = request.getPhoneNumbers().stream()
@@ -70,10 +82,9 @@ public class SendController {
                 }
             }
             if (mediaUrls.isEmpty()) {
-                if (request.getMediaUrl() != null && !request.getMediaUrl().isBlank()) {
-                    mediaUrls.add(request.getMediaUrl());
-                } else if (request.getImageUrl() != null && !request.getImageUrl().isBlank()) {
-                    mediaUrls.add(request.getImageUrl());
+                String resolvedMediaUrl = request.getResolvedMediaUrl();
+                if (resolvedMediaUrl != null && !resolvedMediaUrl.isBlank()) {
+                    mediaUrls.add(resolvedMediaUrl);
                 }
             }
 
@@ -82,13 +93,20 @@ public class SendController {
                             ? request.getPersonalizedMessages()
                             : List.of();
 
+            int minDelay = request.getMinDelay() != null ? request.getMinDelay() : 0;
+            int maxDelay = request.getMaxDelay() != null ? request.getMaxDelay() : 0;
+
+            log.info("Bulk send started: template={}, phones={}, sessionId={}",
+                    resolvedTemplate, cleanedNumbers.size(), request.getSessionId());
+
             sendingService.startSendingProcess(
                     session.getSessionId(),
                     request.getSessionId(),
                     cleanedNumbers,
-                    request.getMessage(),
-                    request.getMinDelay(),
-                    request.getMaxDelay(),
+                    resolvedTemplate,
+                    request.getResolvedLanguage(),
+                    minDelay,
+                    maxDelay,
                     mediaUrls,
                     mediaType,
                     mediaFilename,

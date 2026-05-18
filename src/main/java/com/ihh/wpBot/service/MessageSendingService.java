@@ -83,6 +83,7 @@ public class MessageSendingService {
             String whatsappSessionId,
             List<String> phoneNumbers,
             String templateName,
+            String language,
             int minDelay,
             int maxDelay,
             List<String> mediaPaths,
@@ -94,11 +95,8 @@ public class MessageSendingService {
         SendSession session = activeSessions.get(sessionId);
         if (session == null) return;
 
-        session.setTotalNumbers(phoneNumbers.size());
-        session.setStatus(SendStatus.SENDING);
-        session.addLog(getFormattedTime() + " [SİSTEM] Meta API'ye bağlanılıyor...");
-
-        runSendingLoop(session, phoneNumbers, templateName, mediaPaths, mediaType, mediaFilename, personalizedMessages);
+        initializeSessionForSending(session, phoneNumbers, templateName, language, mediaPaths, mediaType, mediaFilename, isPersonalized, personalizedMessages);
+        runSendingLoop(session);
     }
 
     @Async
@@ -123,23 +121,26 @@ public class MessageSendingService {
             throw new IllegalArgumentException("phoneNumbers boş olamaz.");
         }
 
-        session.setTotalNumbers(phoneNumbers.size());
-        session.setStatus(SendStatus.SENDING);
+        initializeSessionForSending(session, phoneNumbers, templateName, "tr", mediaPaths, mediaType, mediaFilename, isPersonalized, null);
         session.addLog(getFormattedTime()
                 + " [SİSTEM] RATE_LIMITED oturumu kaldığı yerden devam ettiriliyor...");
-
-        runSendingLoop(session, phoneNumbers, templateName, mediaPaths, mediaType, mediaFilename, null);
+        runSendingLoop(session);
     }
 
-    private void runSendingLoop(
-            SendSession session,
-            List<String> phoneNumbers,
-            String templateName,
-            List<String> mediaPaths,
-            BulkMediaType mediaType,
-            String mediaFilename,
-            List<String> personalizedMessages
-    ) {
+    private void runSendingLoop(SendSession session) {
+        String templateName = session.getTemplateName();
+        if (templateName == null || templateName.isBlank()) {
+            log.error("CRITICAL: SendSession {} has empty templateName. Loop aborted.", session.getSessionId());
+            session.setStatus(SendStatus.FAILED);
+            session.addLog(getFormattedTime() + " [HATA] Şablon adı boş olduğu için gönderim başlatılamadı.");
+            return;
+        }
+        List<String> phoneNumbers = session.getPhoneNumbers() != null ? session.getPhoneNumbers() : List.of();
+        String language = (session.getLanguage() == null || session.getLanguage().isBlank()) ? "tr" : session.getLanguage();
+        String mediaUrl = session.getMediaUrl();
+        BulkMediaType mediaType = session.getMediaType();
+        String mediaFilename = session.getFilename();
+        List<String> personalizedMessages = session.getPersonalizedMessages();
 
         try {
             for (int i = session.getSentCount(); i < phoneNumbers.size(); i++) {
@@ -148,23 +149,22 @@ public class MessageSendingService {
                 String phone = phoneNumbers.get(i);
                 session.setCurrentNumber(phone);
                 boolean shouldIncrement = true;
-                List<String> bodyParameters = buildBodyParameters(templateName, personalizedMessages, i, phone);
+                List<String> bodyParameters = buildBodyParameters(session, templateName, personalizedMessages, i, phone);
 
                 try {
                     String templateWaId;
-                    if (mediaPaths != null && !mediaPaths.isEmpty()) {
-                        String mediaUrl = resolveTemplateMediaUrl(mediaPaths.get(0));
+                    if (mediaUrl != null && !mediaUrl.isBlank()) {
                         BulkMediaType effectiveType = mediaType != null ? mediaType : BulkMediaType.IMAGE;
                         templateWaId = switch (effectiveType) {
                             case VIDEO -> whatsAppService.sendVideoTemplateMessage(
-                                    phone, templateName, "tr", mediaUrl, bodyParameters);
+                                    phone, templateName, language, mediaUrl, bodyParameters);
                             case DOCUMENT -> whatsAppService.sendDocumentTemplateMessage(
-                                    phone, templateName, "tr", mediaUrl, mediaFilename, bodyParameters);
+                                    phone, templateName, language, mediaUrl, mediaFilename, bodyParameters);
                             case IMAGE -> whatsAppService.sendImageTemplateMessage(
-                                    phone, templateName, "tr", mediaUrl, bodyParameters);
+                                    phone, templateName, language, mediaUrl, bodyParameters);
                         };
                     } else {
-                        templateWaId = whatsAppService.sendTemplateMessage(phone, templateName, "tr", bodyParameters);
+                        templateWaId = whatsAppService.sendTemplateMessage(phone, templateName, language, bodyParameters);
                     }
                     session.addLog(getFormattedTime() + " [GÖNDER] Mesaj Meta API'ye iletildi. ✔");
                     createDeliveryRecordSafely(session, phone, templateName, templateWaId);
@@ -303,16 +303,73 @@ public class MessageSendingService {
         return phoneNumber.trim().replace("+", "").replace(" ", "").replace("-", "");
     }
 
+    private void initializeSessionForSending(
+            SendSession session,
+            List<String> phoneNumbers,
+            String templateName,
+            String language,
+            List<String> mediaPaths,
+            BulkMediaType mediaType,
+            String mediaFilename,
+            boolean isPersonalized,
+            List<String> personalizedMessages
+    ) {
+        String resolvedTemplate = (templateName != null && !templateName.isBlank())
+                ? templateName.trim()
+                : session.getTemplateName();
+        String resolvedLanguage = (language != null && !language.isBlank())
+                ? language.trim()
+                : (session.getLanguage() != null && !session.getLanguage().isBlank() ? session.getLanguage() : "tr");
+        String resolvedMediaUrl = resolveFirstMediaUrl(mediaPaths);
+        if ((resolvedMediaUrl == null || resolvedMediaUrl.isBlank()) && session.getMediaUrl() != null && !session.getMediaUrl().isBlank()) {
+            resolvedMediaUrl = session.getMediaUrl();
+        }
+
+        session.setPhoneNumbers(phoneNumbers != null ? phoneNumbers : List.of());
+        session.setTemplateName(resolvedTemplate);
+        session.setLanguage(resolvedLanguage);
+        session.setMediaUrl(resolvedMediaUrl);
+        session.setMediaType(mediaType != null ? mediaType : session.getMediaType());
+        session.setFilename((mediaFilename != null && !mediaFilename.isBlank()) ? mediaFilename : session.getFilename());
+        session.setPersonalized(isPersonalized);
+        session.setPersonalizedMessages(personalizedMessages != null ? personalizedMessages : List.of());
+        session.setTotalNumbers(session.getPhoneNumbers().size());
+        session.setStatus(SendStatus.SENDING);
+        session.addLog(getFormattedTime() + " [SİSTEM] Meta API'ye bağlanılıyor...");
+    }
+
+    private String resolveFirstMediaUrl(List<String> mediaPaths) {
+        if (mediaPaths == null || mediaPaths.isEmpty()) {
+            return null;
+        }
+        String first = mediaPaths.get(0);
+        if (first == null || first.isBlank()) {
+            return null;
+        }
+        return resolveTemplateMediaUrl(first);
+    }
+
     private List<String> buildBodyParameters(String templateName,
                                              List<String> personalizedMessages,
                                              int index,
                                              String phoneNumber) {
+        return buildBodyParameters(null, templateName, personalizedMessages, index, phoneNumber);
+    }
+
+    private List<String> buildBodyParameters(SendSession session,
+                                             String templateName,
+                                             List<String> personalizedMessages,
+                                             int index,
+                                             String phoneNumber) {
+        String templateLabel = (templateName == null || templateName.isBlank()) ? "EMPTY!" : templateName;
+        String mediaUrl = session != null ? session.getMediaUrl() : null;
+        BulkMediaType mediaType = session != null ? session.getMediaType() : null;
         if (personalizedMessages != null && !personalizedMessages.isEmpty() && index < personalizedMessages.size()) {
             String msg = personalizedMessages.get(index);
             if (msg != null && !msg.isBlank()) {
                 List<String> params = List.of(msg);
-                log.info("Building body params for template={}, phone={}, params={} (personalized)",
-                        templateName, phoneNumber, params);
+                log.info("Building body params for template='{}', phone={}, params={}, mediaUrl={}, mediaType={} (personalized)",
+                        templateLabel, phoneNumber, params, mediaUrl, mediaType);
                 return params;
             }
         }
@@ -324,8 +381,8 @@ public class MessageSendingService {
             default -> List.of();
         };
 
-        log.info("Building body params for template={}, phone={}, params={}",
-                templateName, phoneNumber, params);
+        log.info("Building body params for template='{}', phone={}, params={}, mediaUrl={}, mediaType={}",
+                templateLabel, phoneNumber, params, mediaUrl, mediaType);
         return params;
     }
 
