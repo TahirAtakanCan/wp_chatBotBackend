@@ -1,9 +1,14 @@
 package com.ihh.wpBot.controller;
 
+import com.ihh.wpBot.dto.ExportColumn;
+import com.ihh.wpBot.dto.ExportOptions;
+import com.ihh.wpBot.dto.ExportOptionsRequest;
+import com.ihh.wpBot.dto.SortBy;
 import com.ihh.wpBot.model.DeliveryRecord;
 import com.ihh.wpBot.model.DeliveryStatus;
 import com.ihh.wpBot.repository.DeliveryRecordRepository;
 import com.ihh.wpBot.service.DeliveryExportService;
+import com.ihh.wpBot.service.FailureCategoryMapper;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -24,6 +29,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @RestController
@@ -91,23 +97,105 @@ public class DeliveryController {
             @RequestParam(required = false) DeliveryStatus status,
             @RequestParam(required = false) Integer days
     ) throws IOException {
-        LocalDateTime sinceDate = (days != null && days > 0)
-                ? LocalDateTime.now().minusDays(days)
-                : null;
+                ExportOptions options = new ExportOptions();
+                options.setStatus(status);
+                if (days != null && days > 0) {
+                        options.setSinceDate(LocalDateTime.now().minusDays(days));
+                }
+                return buildExportResponse(options);
+        }
 
-        byte[] data = exportService.exportToExcel(status, sinceDate);
+        @PostMapping("/export")
+        public ResponseEntity<byte[]> exportDeliveries(
+                        @RequestBody ExportOptionsRequest request
+        ) throws IOException {
+                return buildExportResponse(toExportOptions(request));
+        }
 
-        String filename = String.format("gonderim_raporu_%s.xlsx",
-                LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmm")));
+        @GetMapping("/failure-categories")
+        public ResponseEntity<List<Map<String, String>>> getFailureCategories() {
+                return ResponseEntity.ok(FailureCategoryMapper.getAllCategories());
+        }
 
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.parseMediaType(
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        ));
-        headers.setContentDispositionFormData("attachment", filename);
-        headers.setContentLength(data.length);
+        private ResponseEntity<byte[]> buildExportResponse(ExportOptions options) throws IOException {
+                byte[] data = exportService.exportToExcel(options);
 
-        return new ResponseEntity<>(data, headers, HttpStatus.OK);
+                String filename = String.format("gonderim_raporu_%s.xlsx",
+                                LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmm")));
+
+                HttpHeaders headers = new HttpHeaders();
+                headers.setContentType(MediaType.parseMediaType(
+                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                ));
+                headers.setContentDispositionFormData("attachment", filename);
+                headers.setContentLength(data.length);
+
+                return new ResponseEntity<>(data, headers, HttpStatus.OK);
+        }
+
+        private ExportOptions toExportOptions(ExportOptionsRequest request) {
+                ExportOptions options = new ExportOptions();
+                if (request == null) {
+                        return options;
+                }
+
+                options.setStatus(parseDeliveryStatus(request.getStatus()));
+                if (request.getDays() != null && request.getDays() > 0) {
+                        options.setSinceDate(LocalDateTime.now().minusDays(request.getDays()));
+                }
+                options.setFailureCodes(request.getFailureCodes());
+                options.setTemplateName(request.getTemplateName());
+                options.setPhoneSearch(request.getPhoneSearch());
+                options.setContactNameSearch(request.getContactNameSearch());
+                options.setColumns(parseColumns(request.getColumns()));
+                options.setSortBy(parseSortBy(request.getSortBy()));
+                return options;
+        }
+
+        private DeliveryStatus parseDeliveryStatus(String value) {
+                if (value == null || value.isBlank()) {
+                        return null;
+                }
+                try {
+                        return DeliveryStatus.valueOf(value.trim().toUpperCase());
+                } catch (IllegalArgumentException ex) {
+                        return null;
+                }
+        }
+
+        private Set<ExportColumn> parseColumns(List<String> columns) {
+                if (columns == null || columns.isEmpty()) {
+                        return null;
+                }
+
+                Set<ExportColumn> parsed = columns.stream()
+                                .map(this::parseExportColumn)
+                                .filter(column -> column != null)
+                                .collect(Collectors.toSet());
+
+                return parsed.isEmpty() ? null : parsed;
+        }
+
+        private ExportColumn parseExportColumn(String value) {
+                if (value == null || value.isBlank()) {
+                        return null;
+                }
+                try {
+                        return ExportColumn.valueOf(value.trim().toUpperCase());
+                } catch (IllegalArgumentException ex) {
+                        return null;
+                }
+        }
+
+        private SortBy parseSortBy(String value) {
+                if (value == null || value.isBlank()) {
+                        return SortBy.SENT_AT_DESC;
+                }
+                try {
+                        return SortBy.valueOf(value.trim().toUpperCase());
+                } catch (IllegalArgumentException ex) {
+                        return SortBy.SENT_AT_DESC;
+                }
     }
 
     @GetMapping("/stats")

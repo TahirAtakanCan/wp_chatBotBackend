@@ -1,9 +1,21 @@
 package com.ihh.wpBot.service;
 
+import com.ihh.wpBot.dto.ExportColumn;
+import com.ihh.wpBot.dto.ExportOptions;
+import com.ihh.wpBot.dto.SortBy;
 import com.ihh.wpBot.model.DeliveryRecord;
 import com.ihh.wpBot.model.DeliveryStatus;
 import com.ihh.wpBot.repository.DeliveryRecordRepository;
-import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.ss.usermodel.BorderStyle;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellStyle;
+import org.apache.poi.ss.usermodel.FillPatternType;
+import org.apache.poi.ss.usermodel.Font;
+import org.apache.poi.ss.usermodel.HorizontalAlignment;
+import org.apache.poi.ss.usermodel.IndexedColors;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.slf4j.Logger;
@@ -14,7 +26,12 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 public class DeliveryExportService {
@@ -29,45 +46,38 @@ public class DeliveryExportService {
         this.deliveryRecordRepository = repo;
     }
 
-    /**
-     * Gönderim raporlarını Excel olarak üretir.
-     *
-     * @param status    filtre (null = tümü)
-     * @param sinceDate başlangıç tarihi (null = limit yok)
-     * @return Excel file bytes
-     */
     public byte[] exportToExcel(DeliveryStatus status, LocalDateTime sinceDate) throws IOException {
-        List<DeliveryRecord> records;
+        ExportOptions options = new ExportOptions();
+        options.setStatus(status);
+        options.setSinceDate(sinceDate);
+        return exportToExcel(options);
+    }
 
-        if (status != null && sinceDate != null) {
-            records = deliveryRecordRepository.findByStatusAndSentAtAfterOrderBySentAtDesc(status, sinceDate);
-        } else if (status != null) {
-            records = deliveryRecordRepository.findByStatusOrderBySentAtDesc(status);
-        } else if (sinceDate != null) {
-            records = deliveryRecordRepository.findBySentAtAfterOrderBySentAtDesc(sinceDate);
-        } else {
-            records = deliveryRecordRepository.findAllByOrderBySentAtDesc();
-        }
+    public byte[] exportToExcel(ExportOptions options) throws IOException {
+        ExportOptions safeOptions = options != null ? options : new ExportOptions();
+        List<DeliveryRecord> records = fetchFilteredRecords(safeOptions);
+        Set<ExportColumn> selectedColumns = resolveColumns(safeOptions.getColumns());
+        List<ExportColumn> orderedColumns = java.util.Arrays.stream(ExportColumn.values())
+                .filter(selectedColumns::contains)
+                .collect(Collectors.toList());
 
-        log.info("Excel export: {} kayıt, status={}, sinceDate={}", records.size(), status, sinceDate);
+        log.info("Excel export: {} kayıt, status={}, sinceDate={}, failureCodes={}, templateName={}, phoneSearch={}, contactNameSearch={}, columns={}, sortBy={}",
+                records.size(), safeOptions.getStatus(), safeOptions.getSinceDate(), safeOptions.getFailureCodes(),
+                safeOptions.getTemplateName(), safeOptions.getPhoneSearch(), safeOptions.getContactNameSearch(),
+                orderedColumns, safeOptions.getSortBy());
 
         try (XSSFWorkbook workbook = new XSSFWorkbook()) {
             Sheet sheet = workbook.createSheet("Gönderim Raporu");
 
             CellStyle headerStyle = buildHeaderStyle(workbook);
-            CellStyle cellStyle   = buildBaseCellStyle(workbook);
+            CellStyle cellStyle = buildBaseCellStyle(workbook);
             CellStyle failedStyle = buildColoredStyle(workbook, cellStyle, IndexedColors.ROSE);
             CellStyle successStyle = buildColoredStyle(workbook, cellStyle, IndexedColors.LIGHT_GREEN);
 
-            String[] headers = {
-                "Sıra", "İsim", "Telefon", "Şablon", "Durum",
-                "Hata Kodu", "Hata Sebebi", "Gönderim", "İletildi", "Okundu", "Başarısız"
-            };
-
             Row headerRow = sheet.createRow(0);
-            for (int i = 0; i < headers.length; i++) {
+            for (int i = 0; i < orderedColumns.size(); i++) {
                 Cell cell = headerRow.createCell(i);
-                cell.setCellValue(headers[i]);
+                cell.setCellValue(getColumnLabel(orderedColumns.get(i)));
                 cell.setCellStyle(headerStyle);
             }
 
@@ -85,26 +95,19 @@ public class DeliveryExportService {
                     rowStyle = cellStyle;
                 }
 
-                createCell(row, 0, rowNum, rowStyle);
-                createCell(row, 1, record.getContactName() != null ? record.getContactName() : "", rowStyle);
-                createCell(row, 2, record.getPhoneNumber(), rowStyle);
-                createCell(row, 3, record.getTemplateName() != null ? record.getTemplateName() : "", rowStyle);
-                createCell(row, 4, translateStatus(record.getStatus()), rowStyle);
-                createCell(row, 5, record.getFailureCode() != null ? record.getFailureCode() : "", rowStyle);
-                createCell(row, 6, translateFailureReason(record.getFailureCode(), record.getFailureReason()), rowStyle);
-                createCell(row, 7, formatDate(record.getSentAt()), rowStyle);
-                createCell(row, 8, formatDate(record.getDeliveredAt()), rowStyle);
-                createCell(row, 9, formatDate(record.getReadAt()), rowStyle);
-                createCell(row, 10, formatDate(record.getFailedAt()), rowStyle);
+                for (int colIdx = 0; colIdx < orderedColumns.size(); colIdx++) {
+                    createCell(row, colIdx, getCellValue(orderedColumns.get(colIdx), record, rowNum), rowStyle);
+                }
 
                 rowNum++;
             }
 
-            sheet.setAutoFilter(new CellRangeAddress(0, rowNum - 1, 0, headers.length - 1));
+            if (!orderedColumns.isEmpty() && rowNum > 1) {
+                sheet.setAutoFilter(new CellRangeAddress(0, rowNum - 1, 0, orderedColumns.size() - 1));
+            }
 
-            int[] colWidths = {8, 25, 16, 30, 14, 12, 50, 20, 20, 20, 20};
-            for (int i = 0; i < colWidths.length; i++) {
-                sheet.setColumnWidth(i, colWidths[i] * 256);
+            for (int i = 0; i < orderedColumns.size(); i++) {
+                sheet.setColumnWidth(i, getColumnWidth(orderedColumns.get(i)));
             }
 
             sheet.createFreezePane(0, 1);
@@ -114,6 +117,160 @@ public class DeliveryExportService {
                 return out.toByteArray();
             }
         }
+    }
+
+    private List<DeliveryRecord> fetchFilteredRecords(ExportOptions options) {
+        List<DeliveryRecord> records;
+
+        if (options.getStatus() != null && options.getSinceDate() != null) {
+            records = deliveryRecordRepository.findByStatusAndSentAtAfterOrderBySentAtDesc(options.getStatus(), options.getSinceDate());
+        } else if (options.getStatus() != null) {
+            records = deliveryRecordRepository.findByStatusOrderBySentAtDesc(options.getStatus());
+        } else if (options.getSinceDate() != null) {
+            records = deliveryRecordRepository.findBySentAtAfterOrderBySentAtDesc(options.getSinceDate());
+        } else {
+            records = deliveryRecordRepository.findAllByOrderBySentAtDesc();
+        }
+
+        Set<String> failureCodeFilter = normalizeStrings(options.getFailureCodes());
+        String templateName = normalizeValue(options.getTemplateName());
+        String phoneSearch = normalizePhone(options.getPhoneSearch());
+        String contactNameSearch = normalizeValue(options.getContactNameSearch());
+
+        Comparator<DeliveryRecord> comparator = getComparator(options.getSortBy());
+
+        return records.stream()
+                .filter(record -> matchesFailureCodes(record, failureCodeFilter))
+                .filter(record -> matchesTemplateName(record, templateName))
+                .filter(record -> matchesPhoneSearch(record, phoneSearch))
+                .filter(record -> matchesContactNameSearch(record, contactNameSearch))
+                .sorted(comparator)
+                .collect(Collectors.toList());
+    }
+
+    private Set<ExportColumn> resolveColumns(Set<ExportColumn> columns) {
+        if (columns == null || columns.isEmpty()) {
+            Set<ExportColumn> allColumns = new LinkedHashSet<>();
+            java.util.Collections.addAll(allColumns, ExportColumn.values());
+            return allColumns;
+        }
+
+        Set<ExportColumn> selected = new LinkedHashSet<>();
+        for (ExportColumn column : ExportColumn.values()) {
+            if (columns.contains(column)) {
+                selected.add(column);
+            }
+        }
+        return selected;
+    }
+
+    private boolean matchesFailureCodes(DeliveryRecord record, Set<String> failureCodes) {
+        if (failureCodes == null || failureCodes.isEmpty()) {
+            return true;
+        }
+        return failureCodes.contains(normalizeValue(record.getFailureCode()));
+    }
+
+    private boolean matchesTemplateName(DeliveryRecord record, String templateName) {
+        if (templateName == null || templateName.isBlank()) {
+            return true;
+        }
+        return normalizeValue(record.getTemplateName()).equals(templateName);
+    }
+
+    private boolean matchesPhoneSearch(DeliveryRecord record, String phoneSearch) {
+        if (phoneSearch == null || phoneSearch.isBlank()) {
+            return true;
+        }
+        return normalizePhone(record.getPhoneNumber()).contains(phoneSearch);
+    }
+
+    private boolean matchesContactNameSearch(DeliveryRecord record, String contactNameSearch) {
+        if (contactNameSearch == null || contactNameSearch.isBlank()) {
+            return true;
+        }
+        return normalizeValue(record.getContactName()).contains(contactNameSearch);
+    }
+
+    private Set<String> normalizeStrings(List<String> values) {
+        if (values == null || values.isEmpty()) {
+            return java.util.Collections.emptySet();
+        }
+
+        Set<String> normalized = new HashSet<>();
+        for (String value : values) {
+            String normalizedValue = normalizeValue(value);
+            if (!normalizedValue.isBlank()) {
+                normalized.add(normalizedValue);
+            }
+        }
+        return normalized;
+    }
+
+    private String normalizeValue(String value) {
+        return value == null ? "" : value.trim().toLowerCase();
+    }
+
+    private String normalizePhone(String value) {
+        return value == null ? "" : value.replaceAll("\\s+", "").trim();
+    }
+
+    private Comparator<DeliveryRecord> getComparator(SortBy sortBy) {
+        SortBy safeSortBy = sortBy != null ? sortBy : SortBy.SENT_AT_DESC;
+        return switch (safeSortBy) {
+            case SENT_AT_DESC -> Comparator.comparing(DeliveryRecord::getSentAt, Comparator.nullsLast(Comparator.reverseOrder()));
+            case SENT_AT_ASC -> Comparator.comparing(DeliveryRecord::getSentAt, Comparator.nullsLast(Comparator.naturalOrder()));
+            case CONTACT_NAME_ASC -> Comparator.comparing(record -> normalizeValue(record.getContactName()), Comparator.nullsLast(Comparator.naturalOrder()));
+            case STATUS_ASC -> Comparator.comparing(record -> record.getStatus() != null ? record.getStatus().name() : "", Comparator.nullsLast(Comparator.naturalOrder()));
+        };
+    }
+
+    private String getColumnLabel(ExportColumn column) {
+        return switch (column) {
+            case SIRA -> "Sıra";
+            case ISIM -> "İsim";
+            case TELEFON -> "Telefon";
+            case SABLON -> "Şablon";
+            case DURUM -> "Durum";
+            case HATA_KODU -> "Hata Kodu";
+            case HATA_KATEGORI -> "Hata Kategorisi";
+            case HATA_DETAY -> "Hata Detayı";
+            case GONDERIM_TARIHI -> "Gönderim Tarihi";
+            case ILETILDI_TARIHI -> "İletildi Tarihi";
+            case OKUNDU_TARIHI -> "Okundu Tarihi";
+            case BASARISIZ_TARIHI -> "Başarısız Tarihi";
+        };
+    }
+
+    private int getColumnWidth(ExportColumn column) {
+        return switch (column) {
+            case SIRA -> 8 * 256;
+            case ISIM -> 25 * 256;
+            case TELEFON -> 16 * 256;
+            case SABLON -> 30 * 256;
+            case DURUM -> 14 * 256;
+            case HATA_KODU -> 12 * 256;
+            case HATA_KATEGORI -> 20 * 256;
+            case HATA_DETAY -> 50 * 256;
+            case GONDERIM_TARIHI, ILETILDI_TARIHI, OKUNDU_TARIHI, BASARISIZ_TARIHI -> 20 * 256;
+        };
+    }
+
+    private Object getCellValue(ExportColumn column, DeliveryRecord record, int rowNum) {
+        return switch (column) {
+            case SIRA -> rowNum;
+            case ISIM -> record.getContactName() != null ? record.getContactName() : "";
+            case TELEFON -> record.getPhoneNumber() != null ? record.getPhoneNumber() : "";
+            case SABLON -> record.getTemplateName() != null ? record.getTemplateName() : "";
+            case DURUM -> translateStatus(record.getStatus());
+            case HATA_KODU -> record.getFailureCode() != null ? record.getFailureCode() : "";
+            case HATA_KATEGORI -> FailureCategoryMapper.getCategory(record.getFailureCode());
+            case HATA_DETAY -> FailureCategoryMapper.getDetail(record.getFailureCode(), record.getFailureReason());
+            case GONDERIM_TARIHI -> formatDate(record.getSentAt());
+            case ILETILDI_TARIHI -> formatDate(record.getDeliveredAt());
+            case OKUNDU_TARIHI -> formatDate(record.getReadAt());
+            case BASARISIZ_TARIHI -> formatDate(record.getFailedAt());
+        };
     }
 
     private CellStyle buildHeaderStyle(Workbook workbook) {
@@ -165,31 +322,14 @@ public class DeliveryExportService {
     }
 
     private String translateStatus(DeliveryStatus status) {
-        if (status == null) return "";
+        if (status == null) {
+            return "";
+        }
         return switch (status) {
-            case SENT      -> "Gönderildi";
+            case SENT -> "Gönderildi";
             case DELIVERED -> "İletildi";
-            case READ      -> "Okundu";
-            case FAILED    -> "Başarısız";
-        };
-    }
-
-    /**
-     * Meta hata kodlarını Türkçe açıklamaya çevirir.
-     */
-    private String translateFailureReason(String code, String originalReason) {
-        if (code == null || code.isBlank()) return "";
-        return switch (code) {
-            case "131026" -> "Mesaj iletilemedi (kullanıcı offline, WhatsApp aktif değil veya engagement düşük)";
-            case "131047" -> "24 saat penceresi kapalı, tekrar template gerekli";
-            case "131048" -> "Spam Rate limiti aşıldı (WABA korumalı)";
-            case "131049" -> "Ekosistem koruması: çok mesaj atıldı veya kullanıcı engelledi";
-            case "131050" -> "Kullanıcı sizi engelledi";
-            case "131053" -> "Medya yüklenemedi (URL erişilemez)";
-            case "131056" -> "Aynı kişiye çok mesaj (pair rate limit)";
-            case "130472" -> "Kullanıcı pazarlama mesajını iptal etti (opt-out)";
-            case "131000" -> "Genel sunucu hatası, tekrar denenmeli";
-            default       -> originalReason != null ? originalReason : "Bilinmeyen hata kodu: " + code;
+            case READ -> "Okundu";
+            case FAILED -> "Başarısız";
         };
     }
 }
