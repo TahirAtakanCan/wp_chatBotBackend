@@ -7,6 +7,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -31,4 +32,13 @@ public interface DeliveryRecordRepository extends JpaRepository<DeliveryRecord, 
     @Query("SELECT d FROM DeliveryRecord d WHERE d.phoneNumber IN :phones AND d.sentAt = " +
             "(SELECT MAX(d2.sentAt) FROM DeliveryRecord d2 WHERE d2.phoneNumber = d.phoneNumber)")
     List<DeliveryRecord> findLatestByPhoneNumbers(List<String> phones);
+
+    // Export metodları
+    List<DeliveryRecord> findAllByOrderBySentAtDesc();
+
+    List<DeliveryRecord> findByStatusOrderBySentAtDesc(DeliveryStatus status);
+
+    List<DeliveryRecord> findBySentAtAfterOrderBySentAtDesc(LocalDateTime sinceDate);
+
+    List<DeliveryRecord> findByStatusAndSentAtAfterOrderBySentAtDesc(DeliveryStatus status, LocalDateTime sinceDate);
 }

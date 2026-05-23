@@ -3,9 +3,13 @@ package com.ihh.wpBot.controller;
 import com.ihh.wpBot.model.DeliveryRecord;
 import com.ihh.wpBot.model.DeliveryStatus;
 import com.ihh.wpBot.repository.DeliveryRecordRepository;
+import com.ihh.wpBot.service.DeliveryExportService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -15,6 +19,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.io.IOException;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -24,9 +31,11 @@ import java.util.stream.Collectors;
 public class DeliveryController {
 
     private final DeliveryRecordRepository deliveryRecordRepository;
+    private final DeliveryExportService exportService;
 
-    public DeliveryController(DeliveryRecordRepository repo) {
+    public DeliveryController(DeliveryRecordRepository repo, DeliveryExportService exportService) {
         this.deliveryRecordRepository = repo;
+        this.exportService = exportService;
     }
 
     @GetMapping
@@ -75,6 +84,30 @@ public class DeliveryController {
     @GetMapping("/by-phone/{phone}")
     public ResponseEntity<List<DeliveryRecord>> getByPhone(@PathVariable String phone) {
         return ResponseEntity.ok(deliveryRecordRepository.findByPhoneNumberOrderBySentAtDesc(phone));
+    }
+
+    @GetMapping("/export")
+    public ResponseEntity<byte[]> exportDeliveries(
+            @RequestParam(required = false) DeliveryStatus status,
+            @RequestParam(required = false) Integer days
+    ) throws IOException {
+        LocalDateTime sinceDate = (days != null && days > 0)
+                ? LocalDateTime.now().minusDays(days)
+                : null;
+
+        byte[] data = exportService.exportToExcel(status, sinceDate);
+
+        String filename = String.format("gonderim_raporu_%s.xlsx",
+                LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmm")));
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.parseMediaType(
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ));
+        headers.setContentDispositionFormData("attachment", filename);
+        headers.setContentLength(data.length);
+
+        return new ResponseEntity<>(data, headers, HttpStatus.OK);
     }
 
     @GetMapping("/stats")
