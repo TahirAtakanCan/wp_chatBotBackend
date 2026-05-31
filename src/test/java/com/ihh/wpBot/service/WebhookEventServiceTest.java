@@ -90,7 +90,8 @@ class WebhookEventServiceTest {
                 deliveryRecordRepository,
                 NOOP_TX_MANAGER,
                 APP_ZONE,
-                createMediaServiceMock()
+                createMediaServiceMock(),
+                createAutoReplyServiceMock()
         );
 
         String payload = """
@@ -156,7 +157,8 @@ class WebhookEventServiceTest {
                 deliveryRecordRepository,
                 NOOP_TX_MANAGER,
                 APP_ZONE,
-                createMediaServiceMock()
+                createMediaServiceMock(),
+                createAutoReplyServiceMock()
         );
 
         LocalDateTime before = LocalDateTime.now(APP_ZONE);
@@ -212,7 +214,8 @@ class WebhookEventServiceTest {
                 deliveryRecordRepository,
                 NOOP_TX_MANAGER,
                 APP_ZONE,
-                createMediaServiceMock()
+                createMediaServiceMock(),
+                createAutoReplyServiceMock()
         );
 
         LocalDateTime before = LocalDateTime.now(APP_ZONE);
@@ -270,7 +273,8 @@ class WebhookEventServiceTest {
                 deliveryRecordRepository,
                 NOOP_TX_MANAGER,
                 APP_ZONE,
-                createMediaServiceMock()
+                createMediaServiceMock(),
+                createAutoReplyServiceMock()
         );
 
         String payload = """
@@ -329,7 +333,8 @@ class WebhookEventServiceTest {
                 deliveryRecordRepository,
                 NOOP_TX_MANAGER,
                 APP_ZONE,
-                createMediaServiceMock()
+                createMediaServiceMock(),
+                createAutoReplyServiceMock()
         );
 
         String payload = """
@@ -397,7 +402,8 @@ class WebhookEventServiceTest {
                 deliveryRecordRepository,
                 NOOP_TX_MANAGER,
                 APP_ZONE,
-                createMediaServiceMock()
+                createMediaServiceMock(),
+                createAutoReplyServiceMock()
         );
 
         String payloadNoContacts = """
@@ -448,7 +454,8 @@ class WebhookEventServiceTest {
                 deliveryRecordRepository,
                 NOOP_TX_MANAGER,
                 APP_ZONE,
-                createMediaServiceMock()
+                createMediaServiceMock(),
+                createAutoReplyServiceMock()
         );
 
         String payload = """
@@ -502,7 +509,8 @@ class WebhookEventServiceTest {
                 deliveryRecordRepository,
                 NOOP_TX_MANAGER,
                 APP_ZONE,
-                mediaService
+                mediaService,
+                createAutoReplyServiceMock()
         );
 
         String payload = """
@@ -544,6 +552,10 @@ class WebhookEventServiceTest {
 
     private WhatsAppMediaService createMediaServiceMock() {
         return mock(WhatsAppMediaService.class);
+    }
+
+    private com.ihh.wpBot.service.AutoReplyService createAutoReplyServiceMock() {
+        return mock(com.ihh.wpBot.service.AutoReplyService.class);
     }
 }
 

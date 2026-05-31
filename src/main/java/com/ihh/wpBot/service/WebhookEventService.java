@@ -38,6 +38,7 @@ public class WebhookEventService {
     private final TransactionTemplate transactionTemplate;
     private final ZoneId applicationZoneId;
     private final WhatsAppMediaService whatsAppMediaService;
+    private final AutoReplyService autoReplyService;
 
     public WebhookEventService(
             WebhookEventRepository webhookEventRepository,
@@ -47,7 +48,8 @@ public class WebhookEventService {
             DeliveryRecordRepository deliveryRecordRepository,
             PlatformTransactionManager transactionManager,
             ZoneId applicationZoneId,
-            WhatsAppMediaService whatsAppMediaService
+            WhatsAppMediaService whatsAppMediaService,
+            AutoReplyService autoReplyService
     ) {
         this.webhookEventRepository = webhookEventRepository;
         this.objectMapper = objectMapper;
@@ -57,6 +59,7 @@ public class WebhookEventService {
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.applicationZoneId = applicationZoneId;
         this.whatsAppMediaService = whatsAppMediaService;
+        this.autoReplyService = autoReplyService;
     }
 
     public WebhookEvent saveIncomingPayload(String payload) {
@@ -180,6 +183,15 @@ public class WebhookEventService {
         Conversation savedConversation = conversationRepository.save(conversation);
         inbound.setConversation(savedConversation);
         messageRepository.save(inbound);
+
+        // Otomatik yanıt — sadece text mesajlar için, hata ana akışı kırmasın
+        if (messageType == MessageType.TEXT) {
+            try {
+                autoReplyService.processIncomingMessage(phoneNumber, content);
+            } catch (Exception e) {
+                log.error("Auto-reply processing failed for phone={}", phoneNumber, e);
+            }
+        }
     }
 
     private String safeExtractMetaContactName(JsonNode valueNode) {

@@ -43,6 +43,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/delivery/**").authenticated()
                         .requestMatchers("/api/templates/**").authenticated()
                         .requestMatchers("/api/contacts/**").authenticated()
+                        .requestMatchers("/api/auto-reply/**").authenticated()
                         .requestMatchers("/h2-console/**").permitAll()
                         .anyRequest().authenticated()
                 )
